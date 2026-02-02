@@ -6,6 +6,7 @@ export interface Agent {
   endpoint: string;
   icon: string;
   capabilities: string[];
+  status?: 'active' | 'coming-soon' | 'beta' | 'deprecated';
 }
 
 export interface Category {
