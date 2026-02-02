@@ -1,0 +1,32 @@
+# Topic Management Agent Configuration
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: topic-management-agent
+
+# Ollama LLM Configuration (config-driven)
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:llama3.2}
+  timeout: ${OLLAMA_TIMEOUT:60000}
+
+# MCP Server Configuration
+mcp:
+  kafka:
+    base-url: ${MCP_KAFKA_URL:http://localhost:8081}
+    timeout: ${MCP_TIMEOUT:30000}
+
+# Agent Configuration
+agent:
+  id: topic-management-agent
+  name: Kafka Topic Management Agent
+  category: infrastructure
+
+# Logging
+logging:
+  level:
+    com.agentic.marketplace: DEBUG
+    org.springframework.web: INFO
