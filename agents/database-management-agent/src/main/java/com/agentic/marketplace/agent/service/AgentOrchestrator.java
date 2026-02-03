@@ -39,14 +39,20 @@ public class AgentOrchestrator {
                     .build();
         }
 
-        // Step 3: Execute action via MCP server
-        AgentResponse response = mcpDatabaseService.executeAction(intent);
-        
-        // Step 4: Enhance response with human-readable message
-        return enhanceResponse(response, intent);
+        // Step 3: Execute action via MCP server with intelligent error handling
+        try {
+            AgentResponse response = mcpDatabaseService.executeAction(intent);
+            
+            // Step 4: Enhance response with human-readable message
+            return enhanceResponse(response, intent, request.getQuery());
+        } catch (Exception e) {
+            log.error("Error executing database action: {}", e.getMessage(), e);
+            // Use LLM to provide intelligent error explanation and suggestions
+            return handleErrorWithLLM(e, intent, request.getQuery());
+        }
     }
 
-    private AgentResponse enhanceResponse(AgentResponse response, ParsedIntent intent) {
+    private AgentResponse enhanceResponse(AgentResponse response, ParsedIntent intent, String originalQuery) {
         if (response.isSuccess()) {
             String message = switch (intent.getAction().toLowerCase()) {
                 case "create" -> String.format("Successfully created table '%s'", intent.getTableName());
@@ -60,7 +66,44 @@ public class AgentOrchestrator {
                     .message(message)
                     .data(response.getData())
                     .build();
+        } else if (response.getError() != null) {
+            // Even failed responses from MCP might have SQL errors - use LLM to explain
+            return handleErrorWithLLM(new RuntimeException(response.getError()), intent, originalQuery);
         }
         return response;
+    }
+    
+    private AgentResponse handleErrorWithLLM(Exception error, ParsedIntent intent, String originalQuery) {
+        String errorMessage = error.getMessage();
+        log.info("Using LLM to generate helpful error explanation for: {}", errorMessage);
+        
+        // Create a prompt for the LLM to explain the error and suggest alternatives
+        String errorAnalysisPrompt = String.format(
+            "The user tried to: '%s'\n\n" +
+            "We parsed their intent as: Action=%s, Table=%s, Columns=%s\n\n" +
+            "But we got this database error: %s\n\n" +
+            "Please explain this error in simple terms and suggest 2-3 alternative approaches or table/column names they could use instead. " +
+            "Be helpful, concise, and practical. If it's a reserved keyword issue, suggest similar non-reserved alternatives.",
+            originalQuery,
+            intent.getAction(),
+            intent.getTableName(),
+            intent.getColumns(),
+            errorMessage
+        );
+        
+        try {
+            String helpfulExplanation = ollamaService.getHelpfulErrorExplanation(errorAnalysisPrompt);
+            return AgentResponse.builder()
+                    .success(false)
+                    .error(helpfulExplanation)
+                    .build();
+        } catch (Exception llmError) {
+            log.error("Failed to generate helpful error message with LLM: {}", llmError.getMessage());
+            // Fallback to basic error message
+            return AgentResponse.builder()
+                    .success(false)
+                    .error(String.format("Database operation failed: %s", errorMessage))
+                    .build();
+        }
     }
 }

@@ -74,13 +74,20 @@ public class McpDatabaseService {
         request.put("tableName", intent.getTableName());
         request.put("columns", intent.getColumns());
 
-        return mcpWebClient.post()
+        AgentResponse response = mcpWebClient.post()
                 .uri("/api/tables")
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(AgentResponse.class)
                 .timeout(Duration.ofMillis(mcpDatabaseConfig.getTimeout()))
                 .block();
+                
+        // Check if response indicates an error and throw exception for LLM to handle
+        if (response != null && !response.isSuccess() && response.getError() != null) {
+            throw new RuntimeException(response.getError());
+        }
+        
+        return response;
     }
 
     private AgentResponse listTables() {
@@ -100,12 +107,19 @@ public class McpDatabaseService {
                     .build();
         }
 
-        return mcpWebClient.delete()
+        AgentResponse response = mcpWebClient.delete()
                 .uri("/api/tables/{tableName}", intent.getTableName())
                 .retrieve()
                 .bodyToMono(AgentResponse.class)
                 .timeout(Duration.ofMillis(mcpDatabaseConfig.getTimeout()))
                 .block();
+                
+        // Check if response indicates an error and throw exception for LLM to handle
+        if (response != null && !response.isSuccess() && response.getError() != null) {
+            throw new RuntimeException(response.getError());
+        }
+        
+        return response;
     }
 
     private AgentResponse describeTable(ParsedIntent intent) {
@@ -116,11 +130,18 @@ public class McpDatabaseService {
                     .build();
         }
 
-        return mcpWebClient.get()
+        AgentResponse response = mcpWebClient.get()
                 .uri("/api/tables/{tableName}", intent.getTableName())
                 .retrieve()
                 .bodyToMono(AgentResponse.class)
                 .timeout(Duration.ofMillis(mcpDatabaseConfig.getTimeout()))
                 .block();
+                
+        // Check if response indicates an error and throw exception for LLM to handle
+        if (response != null && !response.isSuccess() && response.getError() != null) {
+            throw new RuntimeException(response.getError());
+        }
+        
+        return response;
     }
 }

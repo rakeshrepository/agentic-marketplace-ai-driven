@@ -131,4 +131,36 @@ public class OllamaService {
                 .errorMessage(message)
                 .build();
     }
+    
+    public String getHelpfulErrorExplanation(String errorAnalysisPrompt) {
+        log.info("Generating helpful error explanation with LLM");
+        
+        try {
+            OllamaRequest request = OllamaRequest.builder()
+                    .model(ollamaConfig.getModel())
+                    .prompt(errorAnalysisPrompt)
+                    .stream(false)
+                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .build();
+
+            OllamaResponse response = ollamaWebClient.post()
+                    .uri("/api/generate")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(OllamaResponse.class)
+                    .timeout(Duration.ofMillis(ollamaConfig.getTimeout()))
+                    .block();
+
+            if (response != null && response.getResponse() != null) {
+                return response.getResponse().trim();
+            }
+            
+            return "An error occurred while processing your request. Please try again with different table or column names.";
+            
+        } catch (Exception e) {
+            log.error("Error generating helpful explanation", e);
+            return "An error occurred while processing your request. Please try again.";
+        }
+    }
 }
+

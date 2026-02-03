@@ -23,21 +23,21 @@ public class DatabaseService {
         log.info("Creating table: {}", request.getTableName());
         
         StringBuilder sql = new StringBuilder("CREATE TABLE ");
-        sql.append(request.getTableName()).append(" (");
+        sql.append(quoteIdentifier(request.getTableName())).append(" (");
         
         List<String> columnDefs = new ArrayList<>();
         List<String> primaryKeys = new ArrayList<>();
         
         for (ColumnInfo column : request.getColumns()) {
             StringBuilder colDef = new StringBuilder();
-            colDef.append(column.getName()).append(" ").append(column.getType());
+            colDef.append(quoteIdentifier(column.getName())).append(" ").append(column.getType());
             
             if (!column.isNullable()) {
                 colDef.append(" NOT NULL");
             }
             
             if (column.isPrimaryKey()) {
-                primaryKeys.add(column.getName());
+                primaryKeys.add(quoteIdentifier(column.getName()));
             }
             
             columnDefs.add(colDef.toString());
@@ -75,15 +75,25 @@ public class DatabaseService {
             java.sql.Connection conn = jdbcTemplate.getDataSource().getConnection();
             java.sql.DatabaseMetaData metaData = conn.getMetaData();
             
-            // Get primary keys
+            // Get primary keys (try both lowercase and uppercase)
             java.sql.ResultSet pkResultSet = metaData.getPrimaryKeys(null, null, tableName);
             while (pkResultSet.next()) {
                 primaryKeys.add(pkResultSet.getString("COLUMN_NAME"));
             }
             pkResultSet.close();
             
-            // Get columns
+            // If no results with original case, try uppercase (PostgreSQL stores unquoted identifiers as uppercase)
+            if (primaryKeys.isEmpty()) {
+                pkResultSet = metaData.getPrimaryKeys(null, null, tableName.toUpperCase());
+                while (pkResultSet.next()) {
+                    primaryKeys.add(pkResultSet.getString("COLUMN_NAME"));
+                }
+                pkResultSet.close();
+            }
+            
+            // Get columns (try both cases)
             java.sql.ResultSet columnsResultSet = metaData.getColumns(null, null, tableName, null);
+            List<ColumnInfo> tempColumns = new ArrayList<>();
             while (columnsResultSet.next()) {
                 ColumnInfo column = new ColumnInfo();
                 String columnName = columnsResultSet.getString("COLUMN_NAME");
@@ -91,9 +101,26 @@ public class DatabaseService {
                 column.setType(columnsResultSet.getString("TYPE_NAME"));
                 column.setNullable(columnsResultSet.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNullable);
                 column.setPrimaryKey(primaryKeys.contains(columnName));
-                columns.add(column);
+                tempColumns.add(column);
             }
             columnsResultSet.close();
+            
+            // If no results with original case, try uppercase
+            if (tempColumns.isEmpty()) {
+                columnsResultSet = metaData.getColumns(null, null, tableName.toUpperCase(), null);
+                while (columnsResultSet.next()) {
+                    ColumnInfo column = new ColumnInfo();
+                    String columnName = columnsResultSet.getString("COLUMN_NAME");
+                    column.setName(columnName);
+                    column.setType(columnsResultSet.getString("TYPE_NAME"));
+                    column.setNullable(columnsResultSet.getInt("NULLABLE") == java.sql.DatabaseMetaData.columnNullable);
+                    column.setPrimaryKey(primaryKeys.contains(columnName));
+                    tempColumns.add(column);
+                }
+                columnsResultSet.close();
+            }
+            
+            columns = tempColumns;
             conn.close();
         } catch (Exception e) {
             log.error("Error fetching table metadata", e);
@@ -101,7 +128,7 @@ public class DatabaseService {
         }
         
         // Get row count
-        String countSql = "SELECT COUNT(*) FROM " + tableName;
+        String countSql = "SELECT COUNT(*) FROM " + quoteIdentifier(tableName);
         Long rowCount = jdbcTemplate.queryForObject(countSql, Long.class);
         
         TableDetails details = new TableDetails();
@@ -115,7 +142,7 @@ public class DatabaseService {
 
     public void dropTable(String tableName) {
         log.info("Dropping table: {}", tableName);
-        String sql = "DROP TABLE IF EXISTS " + tableName;
+        String sql = "DROP TABLE IF EXISTS " + quoteIdentifier(tableName);
         jdbcTemplate.execute(sql);
         log.info("Table dropped successfully: {}", tableName);
     }
@@ -123,7 +150,14 @@ public class DatabaseService {
     public boolean tableExists(String tableName) {
         String sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES " +
                      "WHERE TABLE_NAME = ? AND TABLE_SCHEMA = 'PUBLIC'";
-        Integer count = jdbcTemplate.queryForObject(sql, new Object[]{tableName}, Integer.class);
+        Integer count = jdbcTemplate.queryForObject(sql, new Object[]{tableName.toUpperCase()}, Integer.class);
         return count != null && count > 0;
+    }
+    
+    /**
+     * Quote SQL identifiers to handle reserved keywords and special characters
+     */
+    private String quoteIdentifier(String identifier) {
+        return "\"" + identifier + "\"";
     }
 }
