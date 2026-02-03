@@ -7,6 +7,8 @@ export interface Agent {
   icon: string;
   capabilities: string[];
   status?: 'active' | 'coming-soon' | 'beta' | 'deprecated';
+  color?: string;
+  exampleQueries?: string[];
 }
 
 export interface Category {

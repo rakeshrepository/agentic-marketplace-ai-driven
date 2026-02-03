@@ -26,6 +26,8 @@
         <module>mcp-server/kafka-mcp-server</module>
         <module>mcp-server/database-mcp-server</module>
         <module>agents/topic-management-agent</module>
+        <module>agents/database-management-agent</module>
+        <module>agent-registry-service</module>
     </modules>
 
     <dependencyManagement>

@@ -17,6 +17,9 @@ COPY mcp-server ./mcp-server
 # Copy all agent modules
 COPY agents ./agents
 
+# Copy agent registry service
+COPY agent-registry-service ./agent-registry-service
+
 # Build the application
 RUN chmod +x mvnw && ./mvnw clean package -pl mcp-server/database-mcp-server -am -DskipTests
 

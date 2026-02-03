@@ -1,14 +1,82 @@
-import { useState } from 'react';
-import { Agent } from './types';
-import { agentRegistry } from './config/agentRegistry';
+import { useState, useEffect } from 'react';
+import { Agent, Category } from './types';
+import { getAllAgents } from './services/agentService';
 import { AgentList } from './components/AgentList';
 import { ChatInterface } from './components/ChatInterface';
 import { SearchBar } from './components/SearchBar';
+import AgentOnboarding from './components/AgentOnboarding';
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<'home' | 'onboard'>('home');
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    loadAgents();
+  }, []);
+
+  const loadAgents = async () => {
+    try {
+      setLoading(true);
+      const fetchedAgents = await getAllAgents();
+      setAgents(fetchedAgents);
+      
+      // Extract unique categories from agents
+      const uniqueCategories = new Map<string, Category>();
+      fetchedAgents.forEach(agent => {
+        if (!uniqueCategories.has(agent.category)) {
+          uniqueCategories.set(agent.category, {
+            id: agent.category,
+            name: getCategoryName(agent.category),
+            description: getCategoryDescription(agent.category),
+            icon: getCategoryIcon(agent.category),
+          });
+        }
+      });
+      setCategories(Array.from(uniqueCategories.values()));
+    } catch (error) {
+      console.error('Failed to load agents:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCategoryName = (id: string): string => {
+    const names: Record<string, string> = {
+      'infrastructure': 'Infrastructure & DevOps',
+      'data-analytics': 'Data & Analytics',
+      'communication': 'Communication',
+    };
+    return names[id] || id;
+  };
+
+  const getCategoryDescription = (id: string): string => {
+    const descriptions: Record<string, string> = {
+      'infrastructure': 'Manage your infrastructure, databases, and messaging systems',
+      'data-analytics': 'Process, analyze, and visualize your data',
+      'communication': 'Email, messaging, and notification management',
+    };
+    return descriptions[id] || '';
+  };
+
+  const getCategoryIcon = (id: string): string => {
+    const icons: Record<string, string> = {
+      'infrastructure': '🏗️',
+      'data-analytics': '📊',
+      'communication': '💬',
+    };
+    return icons[id] || '📁';
+  };
+
+  // Render onboarding page
+  if (currentPage === 'onboard') {
+    return <AgentOnboarding />;
+  }
+
+  // Render home page
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       {/* Animated Background */}
@@ -39,6 +107,13 @@ function App() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentPage('onboard')}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+              >
+                <span>✨</span>
+                <span>Register Your Agent</span>
+              </button>
               <div className="px-4 py-2 rounded-lg bg-green-500/20 border border-green-500/30 text-green-300 text-sm font-medium">
                 🟢 All Systems Online
               </div>
@@ -55,15 +130,21 @@ function App() {
             <div className="mb-4">
               <SearchBar value={searchQuery} onChange={setSearchQuery} />
             </div>
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-              <AgentList
-                agents={agentRegistry.agents}
-                categories={agentRegistry.categories}
-                selectedAgent={selectedAgent}
-                onSelectAgent={setSelectedAgent}
-                searchQuery={searchQuery}
-              />
-            </div>
+            {loading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-blue-300">Loading agents...</div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <AgentList
+                  agents={agents}
+                  categories={categories}
+                  selectedAgent={selectedAgent}
+                  onSelectAgent={setSelectedAgent}
+                  searchQuery={searchQuery}
+                />
+              </div>
+            )}
           </div>
 
           {/* Right Panel - Chat Interface */}

@@ -20,33 +20,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
     scrollToBottom();
   }, [messages]);
 
-  const getExampleQueries = (agentId: string): string[] => {
-    switch (agentId) {
-      case 'topic-management-agent':
-        return [
-          '"Create a topic called orders"',
-          '"List all topics"',
-          '"Describe topic users"',
-          '"Delete topic test-topic"',
-        ];
-      case 'database-agent':
-        return [
-          '"Create a table called users with columns id, username, and email"',
-          '"List all tables"',
-          '"Describe table users"',
-          '"Drop table test_table"',
-        ];
-      default:
-        return [
-          '"Help me get started"',
-          '"What can you do?"',
-        ];
+  const getExampleQueries = (): string[] => {
+    // Use exampleQueries from agent if available, otherwise return defaults
+    if (agent.exampleQueries && agent.exampleQueries.length > 0) {
+      return agent.exampleQueries.map(q => `"${q}"`);
     }
+    
+    // Fallback defaults
+    return [
+      '"Help me get started"',
+      '"What can you do?"',
+    ];
   };
 
   useEffect(() => {
     // Reset chat when agent changes
-    const examples = getExampleQueries(agent.id);
+    const examples = getExampleQueries();
     const exampleText = examples.map(ex => `- ${ex}`).join('\n');
     
     setMessages([

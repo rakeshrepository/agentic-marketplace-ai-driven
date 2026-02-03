@@ -10,6 +10,7 @@ COPY pom.xml .
 COPY common ./common
 COPY mcp-server ./mcp-server
 COPY agents ./agents
+COPY agent-registry-service ./agent-registry-service
 
 # Build only the kafka-mcp-server module but allow dependent modules to be built (-am)
 RUN chmod +x mvnw && ./mvnw clean package -DskipTests -pl mcp-server/kafka-mcp-server -am

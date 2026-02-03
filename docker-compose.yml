@@ -46,16 +46,59 @@ services:
       timeout: 10s
       retries: 10
 
-  # Ollama LLM Service
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
+  # Ollama LLM Service - Using host machine's Ollama instead of container
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ${HOME}/.ollama:/root/.ollama
+  #   networks:
+  #     - agentic-network
+
+  # PostgreSQL Database for Agent Registry
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-registry-db
+    environment:
+      POSTGRES_DB: agent_registry
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
     ports:
-      - "11434:11434"
+      - "5432:5432"
     volumes:
-      - ${HOME}/.ollama:/root/.ollama
+      - postgres-data:/var/lib/postgresql/data
     networks:
       - agentic-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d agent_registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Agent Registry Service
+  agent-registry:
+    build:
+      context: .
+      dockerfile: agent-registry-service/Dockerfile
+    container_name: agent-registry
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/agent_registry
+      SPRING_DATASOURCE_USERNAME: admin
+      SPRING_DATASOURCE_PASSWORD: admin123
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8090/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Kafka MCP Server
   kafka-mcp-server:
@@ -106,13 +149,11 @@ services:
     depends_on:
       kafka-mcp-server:
         condition: service_healthy
-      ollama:
-        condition: service_started
     ports:
       - "8080:8080"
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma:2b}
       OLLAMA_TIMEOUT: 120000
       MCP_KAFKA_URL: http://kafka-mcp-server:8081
       MCP_TIMEOUT: 30000
@@ -120,6 +161,31 @@ services:
       - agentic-network
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/agent/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Database Management Agent
+  database-management-agent:
+    build:
+      context: .
+      dockerfile: agents/database-management-agent/Dockerfile
+    container_name: database-management-agent
+    depends_on:
+      database-mcp-server:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma:2b}
+      OLLAMA_TIMEOUT: 120000
+      MCP_DATABASE_URL: http://database-mcp-server:8083
+      MCP_TIMEOUT: 30000
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/api/agent/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -133,8 +199,14 @@ services:
     depends_on:
       topic-management-agent:
         condition: service_healthy
+      database-management-agent:
+        condition: service_healthy
+      agent-registry:
+        condition: service_healthy
     ports:
       - "3000:3000"
+    environment:
+      VITE_AGENT_REGISTRY_URL: http://localhost:8090
     networks:
       - agentic-network
 
@@ -143,4 +215,5 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   ollama-data:
