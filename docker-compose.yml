@@ -81,6 +81,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database MCP Server
+  database-mcp-server:
+    build:
+      context: .
+      dockerfile: mcp-server/database-mcp-server/Dockerfile
+    container_name: database-mcp-server
+    ports:
+      - "8083:8083"
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Topic Management Agent
   topic-management-agent:
     build:

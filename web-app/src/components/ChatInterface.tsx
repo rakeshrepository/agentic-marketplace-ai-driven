@@ -20,13 +20,40 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
     scrollToBottom();
   }, [messages]);
 
+  const getExampleQueries = (agentId: string): string[] => {
+    switch (agentId) {
+      case 'topic-management-agent':
+        return [
+          '"Create a topic called orders"',
+          '"List all topics"',
+          '"Describe topic users"',
+          '"Delete topic test-topic"',
+        ];
+      case 'database-agent':
+        return [
+          '"Create a table called users with columns id, username, and email"',
+          '"List all tables"',
+          '"Describe table users"',
+          '"Drop table test_table"',
+        ];
+      default:
+        return [
+          '"Help me get started"',
+          '"What can you do?"',
+        ];
+    }
+  };
+
   useEffect(() => {
     // Reset chat when agent changes
+    const examples = getExampleQueries(agent.id);
+    const exampleText = examples.map(ex => `- ${ex}`).join('\n');
+    
     setMessages([
       {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `Hello! I'm the ${agent.name}. ${agent.description}\n\nTry asking me things like:\n- "Create a topic called orders"\n- "List all topics"\n- "Describe topic users"\n- "Delete topic test-topic"`,
+        content: `Hello! I'm the ${agent.name}. ${agent.description}\n\nTry asking me things like:\n${exampleText}`,
         timestamp: new Date(),
       },
     ]);
@@ -86,9 +113,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
 
   return (
     <div className="flex flex-col h-full bg-white/5 backdrop-blur-sm rounded-xl shadow-2xl border border-white/10">
-      <div className="p-5 border-b border-white/10 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-sm rounded-t-xl">
-        <h2 className="text-xl font-bold bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">{agent.name}</h2>
-        <p className="text-sm text-purple-200/70 mt-1">Category: {agent.category}</p>
+      <div className="p-5 border-b border-white/10 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-sm rounded-t-xl">
+        <h2 className="text-xl font-bold bg-gradient-to-r from-blue-300 to-cyan-300 bg-clip-text text-transparent">{agent.name}</h2>
+        <p className="text-sm text-blue-200/70 mt-1">Category: {agent.category}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
@@ -101,7 +128,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
               <div
                 className={`max-w-[80%] rounded-xl p-4 ${
                   message.role === 'user'
-                    ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/50'
+                    ? 'bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/50'
                     : 'bg-white/10 backdrop-blur-sm text-white border border-white/10'
                 }`}
               >
@@ -113,7 +140,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
                 )}
                 <p
                   className={`text-xs mt-2 ${
-                    message.role === 'user' ? 'text-purple-100' : 'text-purple-200/60'
+                    message.role === 'user' ? 'text-blue-100' : 'text-blue-200/60'
                   }`}
                 >
                   {message.timestamp.toLocaleTimeString()}
@@ -126,9 +153,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
           <div className="flex justify-start">
             <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-xl p-4">
               <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce animation-delay-100" />
-                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce animation-delay-200" />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce animation-delay-100" />
+                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce animation-delay-200" />
               </div>
             </div>
           </div>
@@ -143,13 +170,13 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 px-5 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-purple-200/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            className="flex-1 px-5 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-purple-500/50 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-300"
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/50 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-300"
           >
             Send
           </button>

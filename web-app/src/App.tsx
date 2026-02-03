@@ -10,12 +10,12 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
       </div>
 
       {/* Header */}
@@ -24,16 +24,16 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl blur opacity-75 animate-pulse"></div>
-                <div className="relative bg-gradient-to-r from-purple-600 to-pink-600 p-3 rounded-xl">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl blur opacity-75 animate-pulse"></div>
+                <div className="relative bg-gradient-to-r from-blue-600 to-cyan-600 p-3 rounded-xl">
                   <span className="text-3xl">🤖</span>
                 </div>
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400 bg-clip-text text-transparent">
                   Agentic Marketplace
                 </h1>
-                <p className="text-sm text-purple-300/80 mt-1">
+                <p className="text-sm text-blue-300/80 mt-1">
                   ✨ AI-powered agents for intelligent automation
                 </p>
               </div>
@@ -74,13 +74,13 @@ function App() {
               <div className="h-full flex items-center justify-center backdrop-blur-sm bg-white/5 rounded-2xl border border-white/10 shadow-2xl">
                 <div className="text-center px-8">
                   <div className="relative inline-block mb-6">
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full blur-xl opacity-50 animate-pulse"></div>
                     <div className="relative text-6xl">💬</div>
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-3">
                     Select an Agent to Start
                   </h3>
-                  <p className="text-purple-300/70 max-w-md">
+                  <p className="text-blue-300/70 max-w-md">
                     Choose an AI agent from the list to begin your intelligent conversation
                   </p>
                 </div>

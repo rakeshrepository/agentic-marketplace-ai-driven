@@ -1,23 +1,18 @@
 FROM eclipse-temurin:17-jdk AS build
 WORKDIR /app
 
-# Copy maven wrapper and pom files
+# Copy maven wrapper and parent pom
 COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
-COPY common/agent-sdk/pom.xml common/agent-sdk/
-COPY mcp-server/kafka-mcp-server/pom.xml mcp-server/kafka-mcp-server/
-COPY agents/topic-management-agent/pom.xml agents/topic-management-agent/
 
-# Download dependencies
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+# Copy full module directories so Maven can resolve the multi-module project during Docker build
+COPY common ./common
+COPY mcp-server ./mcp-server
+COPY agents ./agents
 
-# Copy source code
-COPY common/agent-sdk/src common/agent-sdk/src
-COPY mcp-server/kafka-mcp-server/src mcp-server/kafka-mcp-server/src
-
-# Build the project
-RUN ./mvnw clean package -DskipTests -pl mcp-server/kafka-mcp-server -am
+# Build only the kafka-mcp-server module but allow dependent modules to be built (-am)
+RUN chmod +x mvnw && ./mvnw clean package -DskipTests -pl mcp-server/kafka-mcp-server -am
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app

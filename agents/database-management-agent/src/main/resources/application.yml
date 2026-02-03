@@ -1,0 +1,32 @@
+# Database Management Agent Configuration
+
+server:
+  port: 8082
+
+spring:
+  application:
+    name: database-management-agent
+
+# Ollama LLM Configuration (config-driven)
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:llama3.2}
+  timeout: ${OLLAMA_TIMEOUT:60000}
+
+# MCP Server Configuration
+mcp:
+  database:
+    base-url: ${MCP_DATABASE_URL:http://localhost:8083}
+    timeout: ${MCP_TIMEOUT:30000}
+
+# Agent Configuration
+agent:
+  id: database-management-agent
+  name: Database Management Agent
+  category: infrastructure
+
+# Logging
+logging:
+  level:
+    com.agentic.marketplace: DEBUG
+    root: INFO

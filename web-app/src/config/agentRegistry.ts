@@ -17,12 +17,12 @@ export const agentRegistry: AgentRegistry = {
     {
       id: 'database-agent',
       name: 'Database Management Agent',
-      description: 'Manage database schemas, run queries, and optimize database performance using natural language commands.',
+      description: 'Manage database tables using natural language. Create, list, describe, and drop tables in your H2 database.',
       category: 'infrastructure',
       endpoint: '/api/database-agent',
       icon: 'database',
-      capabilities: ['schema-management', 'query-execution', 'performance-tuning'],
-      status: 'coming-soon',
+      capabilities: ['create-table', 'list-tables', 'describe-table', 'drop-table'],
+      status: 'active',
     },
     {
       id: 'kubernetes-agent',

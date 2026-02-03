@@ -1,0 +1,29 @@
+# Database MCP Server Configuration
+
+server:
+  port: 8083
+
+spring:
+  application:
+    name: database-mcp-server
+  
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:h2:mem:agenticdb}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${SPRING_DATASOURCE_USERNAME:sa}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  sql:
+    init:
+      mode: always
+
+# Logging
+logging:
+  level:
+    com.agentic.marketplace: DEBUG
+    org.springframework.jdbc: WARN
