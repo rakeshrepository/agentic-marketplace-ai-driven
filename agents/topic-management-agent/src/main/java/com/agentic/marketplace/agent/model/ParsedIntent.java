@@ -17,6 +17,8 @@ public class ParsedIntent {
     private Integer partitions;
     private Integer replicationFactor;
     private Map<String, String> config;
-    private boolean valid;
-    private String errorMessage;
+    
+    // Note: Validation removed from LLM responsibility
+    // LLM now focuses on intelligent extraction only
+    // Validation logic moved to AgentOrchestrator
 }

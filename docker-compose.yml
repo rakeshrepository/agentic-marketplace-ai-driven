@@ -46,6 +46,23 @@ services:
       timeout: 10s
       retries: 10
 
+  # Kafka UI for visual management and monitoring
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8088:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    networks:
+      - agentic-network
+
   # Ollama LLM Service - Using host machine's Ollama instead of container
   # ollama:
   #   image: ollama/ollama:latest
@@ -82,6 +99,7 @@ services:
     build:
       context: .
       dockerfile: agent-registry-service/Dockerfile
+    pull_policy: build
     container_name: agent-registry
     depends_on:
       postgres:
@@ -105,6 +123,7 @@ services:
     build:
       context: .
       dockerfile: mcp-server/kafka-mcp-server/Dockerfile
+    pull_policy: build
     container_name: kafka-mcp-server
     depends_on:
       kafka:
@@ -129,6 +148,7 @@ services:
     build:
       context: .
       dockerfile: mcp-server/database-mcp-server/Dockerfile
+    pull_policy: build
     container_name: database-mcp-server
     ports:
       - "8083:8083"
@@ -145,6 +165,7 @@ services:
     build:
       context: .
       dockerfile: agents/topic-management-agent/Dockerfile
+    pull_policy: build
     container_name: topic-management-agent
     depends_on:
       kafka-mcp-server:
@@ -152,9 +173,20 @@ services:
     ports:
       - "8080:8080"
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma:2b}
-      OLLAMA_TIMEOUT: 120000
+      # LLM Provider Configuration (Options: ollama, openai)
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120000}
+      
+      # Ollama Configuration (used when LLM_PROVIDER=ollama)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
+      
+      # OpenAI Configuration (used when LLM_PROVIDER=openai)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      
+      # MCP Configuration
       MCP_KAFKA_URL: http://kafka-mcp-server:8081
       MCP_TIMEOUT: 30000
     networks:
@@ -170,6 +202,7 @@ services:
     build:
       context: .
       dockerfile: agents/database-management-agent/Dockerfile
+    pull_policy: build
     container_name: database-management-agent
     depends_on:
       database-mcp-server:
@@ -177,9 +210,20 @@ services:
     ports:
       - "8082:8082"
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma:2b}
-      OLLAMA_TIMEOUT: 120000
+      # LLM Provider Configuration (Options: ollama, openai)
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-120000}
+      
+      # Ollama Configuration (used when LLM_PROVIDER=ollama)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
+      
+      # OpenAI Configuration (used when LLM_PROVIDER=openai)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      
+      # MCP Configuration
       MCP_DATABASE_URL: http://database-mcp-server:8083
       MCP_TIMEOUT: 30000
     networks:
@@ -195,6 +239,7 @@ services:
     build:
       context: ./web-app
       dockerfile: Dockerfile
+    pull_policy: build
     container_name: web-app
     depends_on:
       topic-management-agent:

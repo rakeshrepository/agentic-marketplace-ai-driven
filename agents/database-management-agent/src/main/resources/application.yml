@@ -7,11 +7,21 @@ spring:
   application:
     name: database-management-agent
 
-# Ollama LLM Configuration (config-driven)
+# LLM Configuration (config-driven)
+llm:
+  provider: ${LLM_PROVIDER:ollama}  # Options: ollama, openai
+  timeout: ${LLM_TIMEOUT:60000}
+
+# Ollama Configuration (when provider=ollama)
 ollama:
   base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
   model: ${OLLAMA_MODEL:llama3.2}
-  timeout: ${OLLAMA_TIMEOUT:60000}
+
+# OpenAI Configuration (when provider=openai)
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
 
 # MCP Server Configuration
 mcp:

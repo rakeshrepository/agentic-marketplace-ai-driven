@@ -162,5 +162,68 @@ public class OllamaService {
             return "An error occurred while processing your request. Please try again.";
         }
     }
+
+    public String generateSuccessResponse(String userQuery, String action, String tableName, Object mcpResult) {
+        log.info("Generating natural language response for action: {}", action);
+        
+        String resultSummary = mcpResult != null ? mcpResult.toString() : "operation completed";
+        
+        String prompt = String.format("""
+            You are a friendly and helpful database management assistant.
+            
+            The user asked: "%s"
+            
+            You successfully performed: %s operation on table '%s'
+            
+            Result data: %s
+            
+            Generate a natural, conversational response (2-3 sentences) that:
+            - Confirms what was done in a friendly way
+            - Mentions key details naturally (table name, columns if relevant)
+            - Is brief but informative
+            - Uses a casual, helpful tone
+            - You may use emojis sparingly if it feels natural (✅ 🎉 📊 💾)
+            
+            Do NOT:
+            - Use templates or robotic language
+            - Be overly formal or verbose
+            - Include technical jargon unless necessary
+            
+            Response (plain text, conversational):
+            """,
+            userQuery,
+            action,
+            tableName != null ? tableName : "tables",
+            resultSummary
+        );
+        
+        try {
+            OllamaRequest request = OllamaRequest.builder()
+                    .model(ollamaConfig.getModel())
+                    .prompt(prompt)
+                    .stream(false)
+                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .build();
+
+            OllamaResponse response = ollamaWebClient.post()
+                    .uri("/api/generate")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(OllamaResponse.class)
+                    .timeout(Duration.ofMillis(ollamaConfig.getTimeout()))
+                    .block();
+
+            if (response != null && response.getResponse() != null) {
+                String naturalResponse = response.getResponse().trim();
+                log.debug("Generated natural response: {}", naturalResponse);
+                return naturalResponse;
+            }
+        } catch (Exception e) {
+            log.error("Error generating natural language response", e);
+        }
+        
+        // Fallback to simple confirmation if LLM fails
+        return String.format("Successfully completed %s operation on table '%s'", action, tableName);
+    }
 }
 

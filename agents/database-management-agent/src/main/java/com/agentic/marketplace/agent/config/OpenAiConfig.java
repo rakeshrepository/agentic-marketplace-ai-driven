@@ -6,8 +6,9 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "ollama")
-public class OllamaConfig {
-    private String baseUrl = "http://localhost:11434";
-    private String model = "llama3.2";
+@ConfigurationProperties(prefix = "openai")
+public class OpenAiConfig {
+    private String apiKey;
+    private String model = "gpt-4o-mini";
+    private String baseUrl = "https://api.openai.com/v1";
 }

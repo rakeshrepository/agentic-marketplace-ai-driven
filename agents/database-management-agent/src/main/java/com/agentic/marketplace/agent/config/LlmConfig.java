@@ -6,8 +6,8 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "ollama")
-public class OllamaConfig {
-    private String baseUrl = "http://localhost:11434";
-    private String model = "llama3.2";
+@ConfigurationProperties(prefix = "llm")
+public class LlmConfig {
+    private String provider = "ollama"; // ollama or openai
+    private Long timeout = 60000L;
 }

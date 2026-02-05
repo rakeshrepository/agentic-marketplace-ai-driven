@@ -43,8 +43,8 @@ public class AgentOrchestrator {
         try {
             AgentResponse response = mcpDatabaseService.executeAction(intent);
             
-            // Step 4: Enhance response with human-readable message
-            return enhanceResponse(response, intent, request.getQuery());
+            // Step 4: Generate natural language response using LLM
+            return generateNaturalResponse(response, intent, request.getQuery());
         } catch (Exception e) {
             log.error("Error executing database action: {}", e.getMessage(), e);
             // Use LLM to provide intelligent error explanation and suggestions
@@ -52,25 +52,26 @@ public class AgentOrchestrator {
         }
     }
 
-    private AgentResponse enhanceResponse(AgentResponse response, ParsedIntent intent, String originalQuery) {
-        if (response.isSuccess()) {
-            String message = switch (intent.getAction().toLowerCase()) {
-                case "create" -> String.format("Successfully created table '%s'", intent.getTableName());
-                case "list" -> "Here are the available tables";
-                case "drop" -> String.format("Successfully dropped table '%s'", intent.getTableName());
-                case "describe" -> String.format("Details for table '%s'", intent.getTableName());
-                default -> response.getMessage();
-            };
+    private AgentResponse generateNaturalResponse(AgentResponse mcpResponse, ParsedIntent intent, String originalQuery) {
+        if (mcpResponse.isSuccess()) {
+            // Let LLM generate conversational response based on what happened
+            String naturalMessage = ollamaService.generateSuccessResponse(
+                    originalQuery,
+                    intent.getAction(),
+                    intent.getTableName(),
+                    mcpResponse.getData()
+            );
+            
             return AgentResponse.builder()
                     .success(true)
-                    .message(message)
-                    .data(response.getData())
+                    .message(naturalMessage)  // LLM-generated conversational message
+                    .data(mcpResponse.getData())  // Keep structured data for UI
                     .build();
-        } else if (response.getError() != null) {
+        } else if (mcpResponse.getError() != null) {
             // Even failed responses from MCP might have SQL errors - use LLM to explain
-            return handleErrorWithLLM(new RuntimeException(response.getError()), intent, originalQuery);
+            return handleErrorWithLLM(new RuntimeException(mcpResponse.getError()), intent, originalQuery);
         }
-        return response;
+        return mcpResponse;
     }
     
     private AgentResponse handleErrorWithLLM(Exception error, ParsedIntent intent, String originalQuery) {

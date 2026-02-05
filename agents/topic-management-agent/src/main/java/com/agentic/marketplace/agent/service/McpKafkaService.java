@@ -29,30 +29,16 @@ public class McpKafkaService {
     public AgentResponse executeAction(ParsedIntent intent) {
         log.info("Executing action: {} for topic: {}", intent.getAction(), intent.getTopicName());
 
-        try {
-            return switch (intent.getAction().toLowerCase()) {
-                case "create" -> createTopic(intent);
-                case "list" -> listTopics();
-                case "delete" -> deleteTopic(intent);
-                case "describe" -> describeTopic(intent);
-                default -> AgentResponse.builder()
-                        .success(false)
-                        .error("Unknown action: " + intent.getAction())
-                        .build();
-            };
-        } catch (WebClientResponseException e) {
-            log.error("MCP server error", e);
-            return AgentResponse.builder()
+        return switch (intent.getAction().toLowerCase()) {
+            case "create" -> createTopic(intent);
+            case "list" -> listTopics();
+            case "delete" -> deleteTopic(intent);
+            case "describe" -> describeTopic(intent);
+            default -> AgentResponse.builder()
                     .success(false)
-                    .error("MCP server error: " + e.getResponseBodyAsString())
+                    .error("Unknown action: " + intent.getAction())
                     .build();
-        } catch (Exception e) {
-            log.error("Error executing action", e);
-            return AgentResponse.builder()
-                    .success(false)
-                    .error("Error: " + e.getMessage())
-                    .build();
-        }
+        };
     }
 
     private AgentResponse createTopic(ParsedIntent intent) {

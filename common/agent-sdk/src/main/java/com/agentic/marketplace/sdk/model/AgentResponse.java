@@ -14,4 +14,5 @@ public class AgentResponse {
     private String message;
     private Object data;
     private String error;
+    private String sessionId;  // For tracking conversation sessions
 }
