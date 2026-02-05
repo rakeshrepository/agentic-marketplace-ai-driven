@@ -2,13 +2,13 @@ package com.agentic.marketplace.agent.service;
 
 import com.agentic.marketplace.agent.config.LlmConfig;
 import com.agentic.marketplace.agent.config.OpenAiConfig;
+import com.agentic.marketplace.agent.constants.KafkaTopicConstants;
 import com.agentic.marketplace.agent.model.OpenAiRequest;
 import com.agentic.marketplace.agent.model.OpenAiResponse;
 import com.agentic.marketplace.agent.model.ParsedIntent;
 import com.agentic.marketplace.agent.prompt.KafkaTopicPrompts;
+import com.agentic.marketplace.agent.util.JsonParsingUtil;
 import com.agentic.marketplace.sdk.model.ConversationMessage;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,7 +28,6 @@ public class OpenAiLlmService implements LlmService {
     private final WebClient openaiWebClient;
     private final OpenAiConfig openAiConfig;
     private final LlmConfig llmConfig;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OpenAiLlmService(@Qualifier("openaiWebClient") WebClient openaiWebClient,
                             OpenAiConfig openAiConfig,
@@ -88,7 +87,7 @@ public class OpenAiLlmService implements LlmService {
             OpenAiRequest request = OpenAiRequest.builder()
                     .model(openAiConfig.getModel())
                     .messages(messages)
-                    .temperature(0.1)
+                    .temperature(KafkaTopicConstants.LlmTemperature.EXTRACTION)
                     .responseFormat(OpenAiRequest.ResponseFormat.builder()
                             .type("json_object")
                             .build())
@@ -109,7 +108,7 @@ public class OpenAiLlmService implements LlmService {
 
             String content = response.getChoices().get(0).getMessage().getContent();
             log.debug("OpenAI response: {}", content);
-            return parseJsonResponse(content);
+            return JsonParsingUtil.parseJsonResponse(content);
 
         } catch (Exception e) {
             log.error("Error parsing intent with OpenAI", e);
@@ -123,29 +122,7 @@ public class OpenAiLlmService implements LlmService {
 
         String resultSummary = mcpResult != null ? mcpResult.toString() : "operation completed";
 
-        String prompt = String.format("""
-            You are a friendly and helpful Kafka topic management assistant.
-            
-            The user asked: "%s"
-            
-            You successfully performed: %s operation on topic '%s'
-            
-            Result data: %s
-            
-            Generate a natural, conversational response (2-3 sentences) that:
-            - Confirms what was done in a friendly way
-            - Mentions key details naturally (topic name, partitions if relevant)
-            - Is brief but informative
-            - Uses a casual, helpful tone
-            - You may use emojis sparingly if it feels natural (✅ 🎉 📊)
-            
-            Do NOT:
-            - Use templates or robotic language
-            - Be overly formal or verbose
-            - Include technical jargon unless necessary
-            
-            Response (plain text, conversational):
-            """,
+        String prompt = String.format(KafkaTopicPrompts.SUCCESS_RESPONSE_TEMPLATE,
                 userQuery,
                 action,
                 entityName != null ? entityName : "topics",
@@ -161,7 +138,7 @@ public class OpenAiLlmService implements LlmService {
                                     .content(prompt)
                                     .build()
                     ))
-                    .temperature(0.7)
+                    .temperature(KafkaTopicConstants.LlmTemperature.GENERATION)
                     .build();
 
             OpenAiResponse response = openaiWebClient.post()
@@ -189,25 +166,7 @@ public class OpenAiLlmService implements LlmService {
     public String generateErrorSuggestion(String errorContext) {
         log.info("Generating intelligent error suggestion with OpenAI for context: {}", errorContext);
 
-        String prompt = String.format("""
-            You are a helpful Kafka topic management assistant. An error occurred while processing a user's request.
-            
-            Analyze the error and provide a friendly, actionable suggestion to the user.
-            
-            Guidelines:
-            - If the error mentions replication factor exceeding available brokers, suggest using replication factor 1-3 (typically 1 for dev, 3 for prod)
-            - If the error mentions partition limits, suggest using 1-10 partitions for most use cases
-            - If the error is about topic already exists, suggest using a different name or deleting the existing topic first
-            - If the error is about topic not found, suggest checking the topic name or listing available topics
-            - Keep response concise (2-3 sentences max)
-            - Be friendly and helpful
-            - Include specific actionable recommendations
-            
-            Error Context:
-            %s
-            
-            Provide a helpful suggestion to the user (plain text, no JSON):
-            """, errorContext);
+        String prompt = String.format(KafkaTopicPrompts.ERROR_SUGGESTION_TEMPLATE, errorContext);
 
         try {
             OpenAiRequest request = OpenAiRequest.builder()
@@ -218,7 +177,7 @@ public class OpenAiLlmService implements LlmService {
                                     .content(prompt)
                                     .build()
                     ))
-                    .temperature(0.7)
+                    .temperature(KafkaTopicConstants.LlmTemperature.GENERATION)
                     .build();
 
             OpenAiResponse response = openaiWebClient.post()
@@ -238,30 +197,5 @@ public class OpenAiLlmService implements LlmService {
 
         // Fallback to original error context if OpenAI fails
         return "An error occurred: " + errorContext;
-    }
-
-    private ParsedIntent parseJsonResponse(String jsonResponse) {
-        try {
-            JsonNode node = objectMapper.readTree(jsonResponse);
-
-            return ParsedIntent.builder()
-                    .action(getTextValue(node, "action"))
-                    .topicName(getTextValue(node, "topicName"))
-                    .partitions(getIntValue(node, "partitions"))
-                    .replicationFactor(getIntValue(node, "replicationFactor"))
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse JSON response: {}", jsonResponse, e);
-            // Return empty intent - orchestrator will handle validation
-            return ParsedIntent.builder().build();
-        }
-    }
-
-    private String getTextValue(JsonNode node, String field) {
-        return node.has(field) && !node.get(field).isNull() ? node.get(field).asText() : null;
-    }
-
-    private Integer getIntValue(JsonNode node, String field) {
-        return node.has(field) && !node.get(field).isNull() ? node.get(field).asInt() : null;
     }
 }

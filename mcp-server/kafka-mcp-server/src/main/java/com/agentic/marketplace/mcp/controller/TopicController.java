@@ -25,31 +25,18 @@ public class TopicController {
         log.info("Create topic request: {}", request);
         try {
             if (request.getTopicName() == null || request.getTopicName().isBlank()) {
-                return ResponseEntity.badRequest().body(AgentResponse.builder()
-                        .success(false)
-                        .error("Topic name is required")
-                        .build());
+                return buildBadRequestResponse("Topic name is required");
             }
             
             if (kafkaAdminService.topicExists(request.getTopicName())) {
-                return ResponseEntity.badRequest().body(AgentResponse.builder()
-                        .success(false)
-                        .error("Topic already exists: " + request.getTopicName())
-                        .build());
+                return buildBadRequestResponse("Topic already exists: " + request.getTopicName());
             }
             
             CreateTopicRequest createdTopic = kafkaAdminService.createTopic(request);
-            return ResponseEntity.ok(AgentResponse.builder()
-                    .success(true)
-                    .message("Topic created successfully")
-                    .data(createdTopic)
-                    .build());
+            return buildSuccessResponse("Topic created successfully", createdTopic);
         } catch (Exception e) {
             log.error("Error creating topic", e);
-            return ResponseEntity.internalServerError().body(AgentResponse.builder()
-                    .success(false)
-                    .error("Failed to create topic: " + e.getMessage())
-                    .build());
+            return buildErrorResponse("Failed to create topic: " + e.getMessage());
         }
     }
 
@@ -58,17 +45,10 @@ public class TopicController {
         log.info("List topics request");
         try {
             List<String> topics = kafkaAdminService.listTopics();
-            return ResponseEntity.ok(AgentResponse.builder()
-                    .success(true)
-                    .message("Found " + topics.size() + " topics")
-                    .data(topics)
-                    .build());
+            return buildSuccessResponse("Found " + topics.size() + " topics", topics);
         } catch (Exception e) {
             log.error("Error listing topics", e);
-            return ResponseEntity.internalServerError().body(AgentResponse.builder()
-                    .success(false)
-                    .error("Failed to list topics: " + e.getMessage())
-                    .build());
+            return buildErrorResponse("Failed to list topics: " + e.getMessage());
         }
     }
 
@@ -81,17 +61,10 @@ public class TopicController {
             }
             
             TopicDetails details = kafkaAdminService.describeTopic(topicName);
-            return ResponseEntity.ok(AgentResponse.builder()
-                    .success(true)
-                    .message("Topic details retrieved")
-                    .data(details)
-                    .build());
+            return buildSuccessResponse("Topic details retrieved", details);
         } catch (Exception e) {
             log.error("Error describing topic", e);
-            return ResponseEntity.internalServerError().body(AgentResponse.builder()
-                    .success(false)
-                    .error("Failed to describe topic: " + e.getMessage())
-                    .build());
+            return buildErrorResponse("Failed to describe topic: " + e.getMessage());
         }
     }
 
@@ -104,16 +77,41 @@ public class TopicController {
             }
             
             kafkaAdminService.deleteTopic(topicName);
-            return ResponseEntity.ok(AgentResponse.builder()
-                    .success(true)
-                    .message("Topic deleted successfully")
-                    .build());
+            return buildSuccessResponse("Topic deleted successfully", null);
         } catch (Exception e) {
             log.error("Error deleting topic", e);
-            return ResponseEntity.internalServerError().body(AgentResponse.builder()
-                    .success(false)
-                    .error("Failed to delete topic: " + e.getMessage())
-                    .build());
+            return buildErrorResponse("Failed to delete topic: " + e.getMessage());
         }
+    }
+
+    /**
+     * Helper method to build success response with data.
+     */
+    private ResponseEntity<AgentResponse> buildSuccessResponse(String message, Object data) {
+        return ResponseEntity.ok(AgentResponse.builder()
+                .success(true)
+                .message(message)
+                .data(data)
+                .build());
+    }
+
+    /**
+     * Helper method to build bad request error response.
+     */
+    private ResponseEntity<AgentResponse> buildBadRequestResponse(String error) {
+        return ResponseEntity.badRequest().body(AgentResponse.builder()
+                .success(false)
+                .error(error)
+                .build());
+    }
+
+    /**
+     * Helper method to build internal server error response.
+     */
+    private ResponseEntity<AgentResponse> buildErrorResponse(String error) {
+        return ResponseEntity.internalServerError().body(AgentResponse.builder()
+                .success(false)
+                .error(error)
+                .build());
     }
 }

@@ -4,6 +4,7 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -15,6 +16,9 @@ import javax.net.ssl.SSLException;
 @Slf4j
 @Configuration
 public class WebClientConfig {
+
+    @Value("${ssl.trust-all:false}")
+    private boolean sslTrustAll;
 
     @Bean
     public WebClient.Builder webClientBuilder() {
@@ -31,15 +35,22 @@ public class WebClientConfig {
     @Bean
     public WebClient openaiWebClient(WebClient.Builder builder, OpenAiConfig config) {
         try {
-            // Create SSL context that trusts all certificates (for OpenAI HTTPS)
-            SslContext sslContext = SslContextBuilder
-                    .forClient()
-                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                    .build();
+            HttpClient httpClient;
+            
+            if (sslTrustAll) {
+                log.warn("SSL certificate verification is DISABLED (ssl.trust-all=true). This should ONLY be used in development!");
+                // Create SSL context that trusts all certificates (for development only)
+                SslContext sslContext = SslContextBuilder
+                        .forClient()
+                        .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                        .build();
 
-            // Create HTTP client with SSL context
-            HttpClient httpClient = HttpClient.create()
-                    .secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
+                httpClient = HttpClient.create()
+                        .secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
+            } else {
+                // Use default SSL context (validates certificates properly)
+                httpClient = HttpClient.create();
+            }
 
             return builder
                     .baseUrl(config.getBaseUrl())

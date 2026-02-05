@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -58,22 +59,28 @@ public class McpKafkaService {
             request.put("replicationFactor", intent.getReplicationFactor());
         }
 
-        return mcpWebClient.post()
-                .uri("/api/topics")
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(AgentResponse.class)
-                .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
-                .block();
+        return Objects.requireNonNull(
+                mcpWebClient.post()
+                        .uri("/api/topics")
+                        .bodyValue(request)
+                        .retrieve()
+                        .bodyToMono(AgentResponse.class)
+                        .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
+                        .block(),
+                "MCP server returned null response for create topic"
+        );
     }
 
     private AgentResponse listTopics() {
-        return mcpWebClient.get()
-                .uri("/api/topics")
-                .retrieve()
-                .bodyToMono(AgentResponse.class)
-                .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
-                .block();
+        return Objects.requireNonNull(
+                mcpWebClient.get()
+                        .uri("/api/topics")
+                        .retrieve()
+                        .bodyToMono(AgentResponse.class)
+                        .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
+                        .block(),
+                "MCP server returned null response for list topics"
+        );
     }
 
     private AgentResponse deleteTopic(ParsedIntent intent) {
@@ -84,12 +91,15 @@ public class McpKafkaService {
                     .build();
         }
 
-        return mcpWebClient.delete()
-                .uri("/api/topics/{topicName}", intent.getTopicName())
-                .retrieve()
-                .bodyToMono(AgentResponse.class)
-                .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
-                .block();
+        return Objects.requireNonNull(
+                mcpWebClient.delete()
+                        .uri("/api/topics/{topicName}", intent.getTopicName())
+                        .retrieve()
+                        .bodyToMono(AgentResponse.class)
+                        .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
+                        .block(),
+                "MCP server returned null response for delete topic"
+        );
     }
 
     private AgentResponse describeTopic(ParsedIntent intent) {
@@ -100,11 +110,14 @@ public class McpKafkaService {
                     .build();
         }
 
-        return mcpWebClient.get()
-                .uri("/api/topics/{topicName}", intent.getTopicName())
-                .retrieve()
-                .bodyToMono(AgentResponse.class)
-                .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
-                .block();
+        return Objects.requireNonNull(
+                mcpWebClient.get()
+                        .uri("/api/topics/{topicName}", intent.getTopicName())
+                        .retrieve()
+                        .bodyToMono(AgentResponse.class)
+                        .timeout(Duration.ofMillis(mcpKafkaConfig.getTimeout()))
+                        .block(),
+                "MCP server returned null response for describe topic"
+        );
     }
 }

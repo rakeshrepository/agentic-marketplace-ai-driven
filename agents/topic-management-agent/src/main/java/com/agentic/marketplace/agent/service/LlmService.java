@@ -12,15 +12,6 @@ import java.util.Map;
 public interface LlmService {
     
     /**
-     * Parse user's natural language query into structured intent
-     * @deprecated Use parseIntent(String, List, Map) for conversation-aware parsing
-     */
-    @Deprecated
-    default ParsedIntent parseIntent(String userQuery) {
-        return parseIntent(userQuery, null, null);
-    }
-    
-    /**
      * Parse user's natural language query into structured intent with conversation history
      * @param userQuery The current user query
      * @param conversationHistory Recent conversation history for context

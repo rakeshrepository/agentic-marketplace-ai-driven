@@ -1,6 +1,8 @@
 package com.agentic.marketplace.agent.service;
 
+import com.agentic.marketplace.agent.constants.KafkaTopicConstants;
 import com.agentic.marketplace.agent.model.ParsedIntent;
+import com.agentic.marketplace.agent.validator.IntentValidator;
 import com.agentic.marketplace.sdk.model.AgentRequest;
 import com.agentic.marketplace.sdk.model.AgentResponse;
 import com.agentic.marketplace.sdk.model.ConversationMessage;
@@ -22,6 +24,7 @@ public class AgentOrchestrator {
     private final LlmService llmService;
     private final McpKafkaService mcpKafkaService;
     private final ConversationService conversationService;
+    private final IntentValidator intentValidator;
 
     public AgentResponse processQuery(AgentRequest request) {
         // Generate or use provided session ID
@@ -61,7 +64,7 @@ public class AgentOrchestrator {
             }
 
             // Step 3: Validate required fields based on action
-            String validationError = validateIntent(intent);
+            String validationError = intentValidator.validate(intent);
             if (validationError != null) {
                 // Ask LLM to generate a friendly error message with context
                 String friendlyError = generateValidationErrorMessage(
@@ -144,48 +147,6 @@ public class AgentOrchestrator {
             // If MCP server returned an error response, throw it so orchestrator can enhance it with LLM
             throw new RuntimeException(mcpResponse.getError() != null ? mcpResponse.getError() : "Unknown error from MCP server");
         }
-    }
-    
-    /**
-     * Validates the parsed intent based on business rules.
-     * Returns error message if invalid, null if valid.
-     */
-    private String validateIntent(ParsedIntent intent) {
-        String action = intent.getAction().toLowerCase();
-        
-        switch (action) {
-            case "create":
-                // CREATE requires topic name
-                if (intent.getTopicName() == null || intent.getTopicName().trim().isEmpty()) {
-                    return "MISSING_TOPIC_NAME_FOR_CREATE";
-                }
-                // Validate partition range (1-10)
-                if (intent.getPartitions() != null && (intent.getPartitions() < 1 || intent.getPartitions() > 10)) {
-                    return "PARTITIONS_OUT_OF_RANGE:" + intent.getPartitions();
-                }
-                // Validate replication factor range (1-3)
-                if (intent.getReplicationFactor() != null && (intent.getReplicationFactor() < 1 || intent.getReplicationFactor() > 3)) {
-                    return "REPLICATION_OUT_OF_RANGE:" + intent.getReplicationFactor();
-                }
-                break;
-                
-            case "delete":
-            case "describe":
-                // DELETE and DESCRIBE require topic name
-                if (intent.getTopicName() == null || intent.getTopicName().trim().isEmpty()) {
-                    return "MISSING_TOPIC_NAME_FOR_" + action.toUpperCase();
-                }
-                break;
-                
-            case "list":
-                // LIST doesn't require any parameters
-                break;
-                
-            default:
-                return "UNKNOWN_ACTION:" + action;
-        }
-        
-        return null; // Valid
     }
     
     /**

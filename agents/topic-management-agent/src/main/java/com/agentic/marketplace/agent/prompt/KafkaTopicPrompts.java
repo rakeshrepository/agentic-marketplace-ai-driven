@@ -146,12 +146,77 @@ public final class KafkaTopicPrompts {
      * Used after successful MCP operations to create friendly, conversational responses.
      * 
      * Placeholders:
+     * - %s: user query
+     * - %s: action performed (create, delete, describe, etc.)
+     * - %s: entity name (topic name)
+     * - %s: result data from MCP
+     */
+    public static final String SUCCESS_RESPONSE_TEMPLATE = """
+        You are a friendly and helpful Kafka topic management assistant.
+        
+        The user asked: "%s"
+        
+        You successfully performed: %s operation on topic '%s'
+        
+        Result data: %s
+        
+        Generate a natural, conversational response (2-3 sentences) that:
+        - Confirms what was done in a friendly way
+        - Mentions key details naturally (topic name, partitions if relevant)
+        - Is brief but informative
+        - Uses a casual, helpful tone
+        - You may use emojis sparingly if it feels natural (✅ 🎉 📊)
+        
+        Do NOT:
+        - Use templates or robotic language
+        - Be overly formal or verbose
+        - Include technical jargon unless necessary
+        
+        Response (plain text, conversational):
+        """;
+
+    /**
+     * Template for generating intelligent error suggestions.
+     * 
+     * Used when errors occur to provide friendly, actionable guidance to users.
+     * 
+     * Placeholder:
+     * - %s: error context (user query, error message, error type)
+     */
+    public static final String ERROR_SUGGESTION_TEMPLATE = """
+        You are a helpful Kafka topic management assistant. An error occurred while processing a user's request.
+        
+        Analyze the error and provide a friendly, actionable suggestion to the user.
+        
+        Guidelines:
+        - If the error mentions replication factor exceeding available brokers, suggest using replication factor 1-3 (typically 1 for dev, 3 for prod)
+        - If the error mentions partition limits, suggest using 1-10 partitions for most use cases
+        - If the error is about topic already exists, suggest using a different name or deleting the existing topic first
+        - If the error is about topic not found, suggest checking the topic name or listing available topics
+        - Keep response concise (2-3 sentences max)
+        - Be friendly and helpful
+        - Include specific actionable recommendations
+        
+        Error Context:
+        %s
+        
+        Provide a helpful suggestion to the user (plain text, no JSON):
+        """;
+
+    /**
+     * @deprecated Use SUCCESS_RESPONSE_TEMPLATE directly
+     * Template for generating natural language success responses.
+     * 
+     * Used after successful MCP operations to create friendly, conversational responses.
+     * 
+     * Placeholders:
      * - %s: action performed (create, delete, describe, etc.)
      * - %s: entity name (topic name)
      * - %s: result summary from MCP
      * - %s: user's original query
      */
-    public static final String SUCCESS_RESPONSE_TEMPLATE = """
+    @Deprecated
+    public static final String OLD_SUCCESS_RESPONSE_TEMPLATE = """
         Generate a friendly, natural language response for the user.
         
         Context:
@@ -169,6 +234,7 @@ public final class KafkaTopicPrompts {
         """;
 
     /**
+     * @deprecated Use ERROR_SUGGESTION_TEMPLATE directly
      * Template for generating friendly validation error messages.
      * 
      * Used when Java validation detects missing required fields or out-of-range values.
@@ -180,6 +246,7 @@ public final class KafkaTopicPrompts {
      * - %s: extracted parameters
      * - %s: validation error code
      */
+    @Deprecated
     public static final String VALIDATION_ERROR_TEMPLATE = """
         The user's request failed validation. Generate a friendly, conversational error message.
         

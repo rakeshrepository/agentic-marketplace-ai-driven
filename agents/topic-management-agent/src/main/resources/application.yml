@@ -29,6 +29,12 @@ mcp:
     base-url: ${MCP_KAFKA_URL:http://localhost:8081}
     timeout: ${MCP_TIMEOUT:30000}
 
+# SSL Configuration
+# WARNING: Set ssl.trust-all=true ONLY in development environments
+# In production, use proper SSL certificates and keep this as false
+ssl:
+  trust-all: ${SSL_TRUST_ALL:false}
+
 # Agent Configuration
 agent:
   id: topic-management-agent

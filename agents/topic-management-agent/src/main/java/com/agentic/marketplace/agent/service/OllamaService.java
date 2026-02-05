@@ -2,13 +2,13 @@ package com.agentic.marketplace.agent.service;
 
 import com.agentic.marketplace.agent.config.LlmConfig;
 import com.agentic.marketplace.agent.config.OllamaConfig;
+import com.agentic.marketplace.agent.constants.KafkaTopicConstants;
 import com.agentic.marketplace.agent.model.OllamaRequest;
 import com.agentic.marketplace.agent.model.OllamaResponse;
 import com.agentic.marketplace.agent.model.ParsedIntent;
 import com.agentic.marketplace.agent.prompt.KafkaTopicPrompts;
+import com.agentic.marketplace.agent.util.JsonParsingUtil;
 import com.agentic.marketplace.sdk.model.ConversationMessage;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,7 +27,6 @@ public class OllamaService implements LlmService {
     private final WebClient ollamaWebClient;
     private final OllamaConfig ollamaConfig;
     private final LlmConfig llmConfig;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public OllamaService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
                          OllamaConfig ollamaConfig,
@@ -78,7 +77,7 @@ public class OllamaService implements LlmService {
                     .prompt(fullPrompt)
                     .stream(false)
                     .format("json")
-                    .options(OllamaRequest.Options.builder().temperature(0.1).build())
+                    .options(OllamaRequest.Options.builder().temperature(KafkaTopicConstants.LlmTemperature.EXTRACTION).build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
@@ -96,7 +95,7 @@ public class OllamaService implements LlmService {
             }
 
             log.debug("LLM response: {}", response.getResponse());
-            return parseJsonResponse(response.getResponse());
+            return JsonParsingUtil.parseJsonResponse(response.getResponse());
             
         } catch (Exception e) {
             log.error("Error parsing intent", e);
@@ -105,61 +104,18 @@ public class OllamaService implements LlmService {
         }
     }
 
-    private ParsedIntent parseJsonResponse(String jsonResponse) {
-        try {
-            JsonNode node = objectMapper.readTree(jsonResponse);
-            
-            return ParsedIntent.builder()
-                    .action(getTextValue(node, "action"))
-                    .topicName(getTextValue(node, "topicName"))
-                    .partitions(getIntValue(node, "partitions"))
-                    .replicationFactor(getIntValue(node, "replicationFactor"))
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse JSON response: {}", jsonResponse, e);
-            // Return empty intent on parse failure - orchestrator will handle validation
-            return ParsedIntent.builder().build();
-        }
-    }
-
-    private String getTextValue(JsonNode node, String field) {
-        return node.has(field) && !node.get(field).isNull() ? node.get(field).asText() : null;
-    }
-
-    private Integer getIntValue(JsonNode node, String field) {
-        return node.has(field) && !node.get(field).isNull() ? node.get(field).asInt() : null;
-    }
-
     @Override
     public String generateErrorSuggestion(String errorContext) {
         log.info("Generating intelligent error suggestion for context: {}", errorContext);
         
-        String prompt = String.format("""
-            You are a helpful Kafka topic management assistant. An error occurred while processing a user's request.
-            
-            Analyze the error and provide a friendly, actionable suggestion to the user.
-            
-            Guidelines:
-            - If the error mentions replication factor exceeding available brokers, suggest using replication factor 1-3 (typically 1 for dev, 3 for prod)
-            - If the error mentions partition limits, suggest using 1-10 partitions for most use cases
-            - If the error is about topic already exists, suggest using a different name or deleting the existing topic first
-            - If the error is about topic not found, suggest checking the topic name or listing available topics
-            - Keep response concise (2-3 sentences max)
-            - Be friendly and helpful
-            - Include specific actionable recommendations
-            
-            Error Context:
-            %s
-            
-            Provide a helpful suggestion to the user (plain text, no JSON):
-            """, errorContext);
+        String prompt = String.format(KafkaTopicPrompts.ERROR_SUGGESTION_TEMPLATE, errorContext);
         
         try {
             OllamaRequest request = OllamaRequest.builder()
                     .model(ollamaConfig.getModel())
                     .prompt(prompt)
                     .stream(false)
-                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .options(OllamaRequest.Options.builder().temperature(KafkaTopicConstants.LlmTemperature.GENERATION).build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
@@ -187,29 +143,7 @@ public class OllamaService implements LlmService {
         
         String resultSummary = mcpResult != null ? mcpResult.toString() : "operation completed";
         
-        String prompt = String.format("""
-            You are a friendly and helpful Kafka topic management assistant.
-            
-            The user asked: "%s"
-            
-            You successfully performed: %s operation on topic '%s'
-            
-            Result data: %s
-            
-            Generate a natural, conversational response (2-3 sentences) that:
-            - Confirms what was done in a friendly way
-            - Mentions key details naturally (topic name, partitions if relevant)
-            - Is brief but informative
-            - Uses a casual, helpful tone
-            - You may use emojis sparingly if it feels natural (✅ 🎉 📊)
-            
-            Do NOT:
-            - Use templates or robotic language
-            - Be overly formal or verbose
-            - Include technical jargon unless necessary
-            
-            Response (plain text, conversational):
-            """,
+        String prompt = String.format(KafkaTopicPrompts.SUCCESS_RESPONSE_TEMPLATE,
             userQuery,
             action,
             topicName != null ? topicName : "topics",
@@ -221,7 +155,7 @@ public class OllamaService implements LlmService {
                     .model(ollamaConfig.getModel())
                     .prompt(prompt)
                     .stream(false)
-                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .options(OllamaRequest.Options.builder().temperature(KafkaTopicConstants.LlmTemperature.GENERATION).build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
