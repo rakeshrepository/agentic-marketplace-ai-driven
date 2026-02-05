@@ -86,36 +86,58 @@ public final class KafkaTopicPrompts {
         4. **Handle partial info**: Extract what you can, leave rest as null
         5. **Override logic**: Explicit user values > stored context > null
         
-        ## EXAMPLE EXTRACTIONS
-        
-        **With Context:**
-        - Context: {"suggestedPartitions": 5}
-        - Input: "name it orders-topic"
-        - Extract: {"action":"create","topicName":"orders-topic","partitions":5,"replicationFactor":null}
-        - Reasoning: User providing name, context has partitions, use both
-        
-        **Without Context:**
-        - Input: "create topic with 3 partitions"
-        - Extract: {"action":"create","topicName":null,"partitions":3,"replicationFactor":null}
-        - Reasoning: Action is create, partitions specified, name not mentioned
-        
-        **Full Specification:**
-        - Input: "create topic orders with 5 partitions and replication 3"
-        - Extract: {"action":"create","topicName":"orders","partitions":5,"replicationFactor":3}
-        - Reasoning: Everything specified, extract all
-        
-        **Simple Request:**
-        - Input: "list topics"
-        - Extract: {"action":"list","topicName":null,"partitions":null,"replicationFactor":null}
-        - Reasoning: Simple list, no parameters needed
-        
-        **Override Example:**
-        - Context: {"suggestedPartitions": 5}
-        - Input: "call it payments with 8 partitions"
-        - Extract: {"action":"create","topicName":"payments","partitions":8,"replicationFactor":null}
-        - Reasoning: User explicitly said 8, override context suggestion
-        
-        User request: %s
+    ## EXAMPLE EXTRACTIONS
+
+    **With Context:**
+    - Context: {"suggestedPartitions": 5}
+    - Input: "name it orders-topic"
+    - Extract: {"action":"create","topicName":"orders-topic","partitions":5,"replicationFactor":null}
+    - Reasoning: User providing name, context has partitions, use both
+
+    **Without Context:**
+    - Input: "create topic with 3 partitions"
+    - Extract: {"action":"create","topicName":null,"partitions":3,"replicationFactor":null}
+    - Reasoning: Action is create, partitions specified, name not mentioned
+
+    **Full Specification:**
+    - Input: "create topic orders with 5 partitions and replication 3"
+    - Extract: {"action":"create","topicName":"orders","partitions":5,"replicationFactor":3}
+    - Reasoning: Everything specified, extract all
+
+    **Simple Request:**
+    - Input: "list topics"
+    - Extract: {"action":"list","topicName":null,"partitions":null,"replicationFactor":null}
+    - Reasoning: Simple list, no parameters needed
+
+    **Override Example:**
+    - Context: {"suggestedPartitions": 5}
+    - Input: "call it payments with 8 partitions"
+    - Extract: {"action":"create","topicName":"payments","partitions":8,"replicationFactor":null}
+    - Reasoning: User explicitly said 8, override context suggestion
+
+    ## NATURAL LANGUAGE → ACTION MAPPING (Important)
+
+    The LLM should treat common natural-language questions about partition counts or replication as a DESCRIBE action.
+    If the user asks about "how many partitions", "what is the partition count", "how many replicas", or similar,
+    map the intent to DESCRIBE and extract the topicName if provided. If topicName is not provided, leave it null
+    so the orchestrator can ask for it.
+
+    **Mapping Examples (treat as DESCRIBE):**
+    - Input: "How many partitions does topic orders have?"
+    - Extract: {"action":"describe","topicName":"orders","partitions":null,"replicationFactor":null}
+
+    - Input: "What is the partition count for topic intelligint-test-100?"
+    - Extract: {"action":"describe","topicName":"intelligint-test-100","partitions":null,"replicationFactor":null}
+
+    - Input: "How many replicas does payments have?"
+    - Extract: {"action":"describe","topicName":"payments","partitions":null,"replicationFactor":null}
+
+    - Input: "What's the replication factor for topic X?"
+    - Extract: {"action":"describe","topicName":"X","partitions":null,"replicationFactor":null}
+
+    Rationale: These questions request information about an existing topic. Do not convert them to a CREATE or LIST action.
+
+    User request: %s
         """;
 
     /**
