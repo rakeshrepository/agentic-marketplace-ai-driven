@@ -11,9 +11,15 @@ interface AgentListProps {
 }
 
 const categoryIconMap: Record<string, string> = {
-  infrastructure: '🖥️',
-  development: '💻',
-  custom: '🧩',
+  infrastructure: '⚡',
+  devops: '�',
+  'developer-tools': '🚀',
+  'cicd-automation': '🔄',
+  'data-analytics': '📊',
+  'security-monitoring': '🛡️',
+  'ai-intelligent': '�',
+  'integration-hub': '🌐',
+  'custom-solutions': '🧩',
   default: '📁',
 };
 

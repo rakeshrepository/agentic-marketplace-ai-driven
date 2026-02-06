@@ -21,6 +21,7 @@ public class Agent {
     @Column(name = "category_id")
     private String categoryId;
     
+    @Column(length = 20)
     private String status;
     
     @Column(name = "endpoint_url")
