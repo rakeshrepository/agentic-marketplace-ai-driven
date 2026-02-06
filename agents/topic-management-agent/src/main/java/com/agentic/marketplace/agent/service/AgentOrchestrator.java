@@ -23,6 +23,7 @@ public class AgentOrchestrator {
 
     private final LlmService llmService;
     private final McpKafkaService mcpKafkaService;
+    private final EmailMcpService emailMcpService;
     private final ConversationService conversationService;
     private final IntentValidator intentValidator;
 
@@ -133,6 +134,36 @@ public class AgentOrchestrator {
                     intent.getTopicName(),
                     mcpResponse.getData()
             );
+            
+            // If email was provided and action was CREATE, send credentials email
+            String emailNotification = null;
+            if (KafkaTopicConstants.Actions.CREATE.equals(intent.getAction()) && 
+                intent.getEmail() != null && !intent.getEmail().trim().isEmpty()) {
+                
+                log.info("Sending email notification to: {}", intent.getEmail());
+                
+                // Extract topic details from response data
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) mcpResponse.getData();
+                int partitions = intent.getPartitions() != null ? intent.getPartitions() : 
+                                (data != null && data.containsKey("partitions") ? 
+                                    ((Number) data.get("partitions")).intValue() : 3);
+                int replicationFactor = intent.getReplicationFactor() != null ? intent.getReplicationFactor() :
+                                       (data != null && data.containsKey("replicationFactor") ? 
+                                           ((Number) data.get("replicationFactor")).intValue() : 1);
+                String bootstrapServers = "localhost:9092"; // Default, could be from config
+                
+                emailNotification = emailMcpService.sendKafkaCredentials(
+                    intent.getEmail(),
+                    intent.getTopicName(),
+                    partitions,
+                    replicationFactor,
+                    bootstrapServers
+                );
+                
+                // Append email notification status to response message
+                naturalMessage = naturalMessage + "\n\n" + emailNotification;
+            }
             
             // Add assistant message to history
             conversationService.addAssistantMessage(sessionId, naturalMessage, null);

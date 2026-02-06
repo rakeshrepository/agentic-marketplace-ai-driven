@@ -54,6 +54,7 @@ public final class KafkaTopicConstants {
         public static final String PARTITIONS_OUT_OF_RANGE = "PARTITIONS_OUT_OF_RANGE";
         public static final String REPLICATION_OUT_OF_RANGE = "REPLICATION_OUT_OF_RANGE";
         public static final String UNKNOWN_ACTION = "UNKNOWN_ACTION";
+        public static final String INVALID_EMAIL_FORMAT = "INVALID_EMAIL_FORMAT";
 
         private ValidationErrors() {}
     }

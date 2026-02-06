@@ -1,0 +1,58 @@
+# Email MCP Server Configuration
+
+server:
+  port: 8084
+
+spring:
+  application:
+    name: email-mcp-server
+  
+  # Mail Configuration
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:false}
+          starttls:
+            enable: ${SMTP_STARTTLS:false}
+            required: false
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+    
+    # Default from address
+    default-encoding: UTF-8
+  
+  # Thymeleaf template configuration
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    cache: false
+
+# Email Service Configuration
+email:
+  from:
+    address: ${EMAIL_FROM_ADDRESS:noreply@agentic-marketplace.local}
+    name: ${EMAIL_FROM_NAME:Agentic Marketplace}
+  
+  # Rate limiting (emails per minute)
+  rate-limit:
+    enabled: ${EMAIL_RATE_LIMIT_ENABLED:true}
+    permits-per-minute: ${EMAIL_RATE_LIMIT_PERMITS:10}
+  
+  # Retry configuration
+  retry:
+    max-attempts: ${EMAIL_RETRY_MAX_ATTEMPTS:3}
+    delay-ms: ${EMAIL_RETRY_DELAY_MS:1000}
+
+# Logging
+logging:
+  level:
+    com.agentic.marketplace: DEBUG
+    org.springframework.mail: DEBUG
+    org.springframework.web: INFO

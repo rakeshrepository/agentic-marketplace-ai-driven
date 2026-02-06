@@ -65,7 +65,26 @@ public class IntentValidator {
             }
         }
 
+        // Validate email format if provided
+        if (intent.getEmail() != null && !intent.getEmail().trim().isEmpty()) {
+            if (!isValidEmail(intent.getEmail())) {
+                return KafkaTopicConstants.ValidationErrors.INVALID_EMAIL_FORMAT + ":" + intent.getEmail();
+            }
+        }
+
         return null; // Valid
+    }
+
+    /**
+     * Validates email address format.
+     */
+    private boolean isValidEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return false;
+        }
+        // Basic email validation regex
+        String emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+        return email.matches(emailRegex);
     }
 
     /**

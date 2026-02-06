@@ -53,6 +53,7 @@ public final class KafkaTopicPrompts {
         - topicName: The name they mention (or null if not mentioned)
         - partitions: The number they specify (or null if not mentioned)
         - replicationFactor: The replication they want (or null if not mentioned)
+        - email: The email address to send credentials (or null if not mentioned)
         
         ## CONVERSATIONAL MEMORY (CRITICAL!)
         
@@ -75,7 +76,8 @@ public final class KafkaTopicPrompts {
             "action": "create|list|delete|describe",
             "topicName": "string or null",
             "partitions": integer-or-null,
-            "replicationFactor": integer-or-null
+            "replicationFactor": integer-or-null,
+            "email": "string or null"
         }
         
         ## EXTRACTION PRINCIPLES
@@ -85,6 +87,7 @@ public final class KafkaTopicPrompts {
         3. **Recognize synonyms**: "make", "build", "create" all mean CREATE action
         4. **Handle partial info**: Extract what you can, leave rest as null
         5. **Override logic**: Explicit user values > stored context > null
+        6. **Email extraction**: Look for phrases like "send to", "email to", "notify" followed by email address
         
     ## EXAMPLE EXTRACTIONS
 
@@ -112,8 +115,21 @@ public final class KafkaTopicPrompts {
     **Override Example:**
     - Context: {"suggestedPartitions": 5}
     - Input: "call it payments with 8 partitions"
-    - Extract: {"action":"create","topicName":"payments","partitions":8,"replicationFactor":null}
+    - Extract: {"action":"create","topicName":"payments","partitions":8,"replicationFactor":null,"email":null}
     - Reasoning: User explicitly said 8, override context suggestion
+
+    **Email Extraction Examples:**
+    - Input: "create topic orders and send credentials to user@example.com"
+    - Extract: {"action":"create","topicName":"orders","partitions":null,"replicationFactor":null,"email":"user@example.com"}
+    - Reasoning: CREATE action with email specified for notification
+
+    - Input: "make a topic payments, email details to admin@company.com"
+    - Extract: {"action":"create","topicName":"payments","partitions":null,"replicationFactor":null,"email":"admin@company.com"}
+    - Reasoning: Email notification requested
+
+    - Input: "create orders with 5 partitions, notify test@example.com"
+    - Extract: {"action":"create","topicName":"orders","partitions":5,"replicationFactor":null,"email":"test@example.com"}
+    - Reasoning: Multiple parameters including email notification
 
     ## NATURAL LANGUAGE → ACTION MAPPING (Important)
 

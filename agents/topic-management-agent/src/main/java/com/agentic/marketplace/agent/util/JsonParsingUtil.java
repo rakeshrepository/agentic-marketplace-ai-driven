@@ -33,6 +33,7 @@ public final class JsonParsingUtil {
                     .topicName(getTextValue(node, "topicName"))
                     .partitions(getIntValue(node, "partitions"))
                     .replicationFactor(getIntValue(node, "replicationFactor"))
+                    .email(getTextValue(node, "email"))
                     .build();
         } catch (Exception e) {
             log.error("Failed to parse JSON response: {}", jsonResponse, e);

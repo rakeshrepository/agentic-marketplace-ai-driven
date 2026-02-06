@@ -17,6 +17,7 @@ public class ParsedIntent {
     private Integer partitions;
     private Integer replicationFactor;
     private Map<String, String> config;
+    private String email;  // Optional: email to send credentials after topic creation
     
     // Note: Validation removed from LLM responsibility
     // LLM now focuses on intelligent extraction only

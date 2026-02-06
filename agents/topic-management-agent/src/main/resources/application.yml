@@ -28,6 +28,9 @@ mcp:
   kafka:
     base-url: ${MCP_KAFKA_URL:http://localhost:8081}
     timeout: ${MCP_TIMEOUT:30000}
+  email:
+    url: ${MCP_EMAIL_URL:http://localhost:8084}
+    timeout: ${MCP_EMAIL_TIMEOUT:30000}
 
 # SSL Configuration
 # WARNING: Set ssl.trust-all=true ONLY in development environments

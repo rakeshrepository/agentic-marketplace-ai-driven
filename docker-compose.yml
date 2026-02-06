@@ -160,6 +160,47 @@ services:
       timeout: 5s
       retries: 5
 
+  # MailHog - SMTP testing server with web UI
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    platform: linux/amd64
+    container_name: mailhog
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI port
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Email MCP Server
+  email-mcp-server:
+    build:
+      context: .
+      dockerfile: mcp-server/email-mcp-server/Dockerfile
+    pull_policy: build
+    container_name: email-mcp-server
+    depends_on:
+      mailhog:
+        condition: service_healthy
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: 1025
+      EMAIL_FROM_ADDRESS: noreply@agentic-marketplace.local
+      EMAIL_FROM_NAME: Agentic Marketplace
+    networks:
+      - agentic-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8084/api/emails/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Topic Management Agent
   topic-management-agent:
     build:
@@ -169,6 +210,8 @@ services:
     container_name: topic-management-agent
     depends_on:
       kafka-mcp-server:
+        condition: service_healthy
+      email-mcp-server:
         condition: service_healthy
     ports:
       - "8080:8080"
@@ -188,6 +231,7 @@ services:
       
       # MCP Configuration
       MCP_KAFKA_URL: http://kafka-mcp-server:8081
+      MCP_EMAIL_URL: http://email-mcp-server:8084
       MCP_TIMEOUT: 30000
     networks:
       - agentic-network
