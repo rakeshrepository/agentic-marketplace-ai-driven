@@ -95,30 +95,30 @@ function App() {
 
   // Render home page
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950">
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute bottom-0 left-1/3 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000"></div>
       </div>
 
       {/* Header */}
-      <header className="relative backdrop-blur-sm bg-white/5 border-b border-white/10">
+      <header className="relative backdrop-blur-sm bg-slate-900/50 border-b border-purple-500/20 shadow-2xl shadow-purple-900/20">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl blur opacity-75 animate-pulse"></div>
-                <div className="relative bg-gradient-to-r from-blue-600 to-cyan-600 p-3 rounded-xl">
+                <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-xl blur opacity-75 animate-pulse"></div>
+                <div className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 p-3 rounded-xl shadow-xl">
                   <span className="text-3xl">🤖</span>
                 </div>
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-2xl">
                   Agentic Marketplace
                 </h1>
-                <p className="text-sm text-blue-300/80 mt-1">
+                <p className="text-sm text-slate-300/80 mt-1 font-light">
                   ✨ AI-powered agents for intelligent automation
                 </p>
               </div>
@@ -126,12 +126,12 @@ function App() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setCurrentPage('onboard')}
-                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg shadow-purple-500/40 hover:shadow-xl hover:shadow-purple-500/60 flex items-center gap-2"
               >
                 <span>✨</span>
                 <span>Register Your Agent</span>
               </button>
-              <div className="px-4 py-2 rounded-lg bg-green-500/20 border border-green-500/30 text-green-300 text-sm font-medium">
+              <div className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-medium shadow-md shadow-emerald-500/20">
                 🟢 All Systems Online
               </div>
             </div>
@@ -157,10 +157,10 @@ function App() {
             {loading ? (
               <div className="flex items-center justify-center py-20">
                 <div className="text-center">
-                  <div className="inline-block p-4 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 mb-4 animate-pulse">
+                  <div className="inline-block p-4 rounded-2xl bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 mb-4 animate-pulse shadow-xl shadow-purple-500/30 border border-purple-400/40">
                     <div className="text-5xl">🤖</div>
                   </div>
-                  <div className="text-blue-300 font-medium">Loading agents...</div>
+                  <div className="text-purple-300 font-medium">Loading agents...</div>
                 </div>
               </div>
             ) : (

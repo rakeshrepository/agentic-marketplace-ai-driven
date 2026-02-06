@@ -75,18 +75,18 @@ export const AgentList: React.FC<AgentListProps> = ({
         return (
           <div key={category.id} className="space-y-5">
             {/* Category Header */}
-            <div className="flex items-center gap-4 pb-2 border-b border-white/10">
-              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-400/30">
+            <div className="flex items-center gap-4 pb-2 border-b border-purple-500/20">
+              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 border border-purple-400/40 shadow-lg shadow-purple-500/30">
                 <span className="text-3xl">{categoryIcon}</span>
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400 bg-clip-text text-transparent">
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-lg">
                   {category.name}
                 </h2>
-                <p className="text-sm text-blue-200/70 mt-1">{category.description}</p>
+                <p className="text-sm text-slate-300/80 mt-1 font-light">{category.description}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-blue-300 font-semibold px-3 py-2 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 rounded-lg border border-blue-400/30">
+                <span className="text-xs text-purple-300 font-semibold px-3 py-2 bg-gradient-to-r from-indigo-600/20 via-purple-600/20 to-pink-600/20 rounded-lg border border-purple-400/40 shadow-md shadow-purple-500/20">
                   {displayAgents.length} of {categoryAgents.length} {categoryAgents.length === 1 ? 'agent' : 'agents'}
                 </span>
               </div>
@@ -105,12 +105,12 @@ export const AgentList: React.FC<AgentListProps> = ({
                     onClick={() => !isDisabled && onSelectAgent(agent)}
                     className={`group relative p-6 rounded-2xl transition-all duration-300 ${
                       isDisabled 
-                        ? 'cursor-not-allowed opacity-60 bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700/50' 
+                        ? 'cursor-not-allowed opacity-60 bg-gradient-to-br from-slate-900/60 to-slate-950/60 border border-slate-700/50' 
                         : 'cursor-pointer hover:scale-[1.03] hover:shadow-2xl'
                     } ${
                       selectedAgent?.id === agent.id
-                        ? 'bg-gradient-to-br from-blue-600/30 via-cyan-600/20 to-indigo-600/30 border-2 border-blue-400/60 shadow-xl shadow-blue-500/40 ring-2 ring-blue-400/30'
-                        : 'bg-gradient-to-br from-slate-800/80 to-slate-900/80 border-2 border-white/10 hover:border-blue-400/40 hover:from-slate-800/90 hover:to-slate-900/90 backdrop-blur-sm'
+                        ? 'bg-gradient-to-br from-indigo-600/30 via-purple-600/25 to-pink-600/30 border-2 border-purple-400/70 shadow-2xl shadow-purple-500/50 ring-2 ring-purple-400/40'
+                        : 'bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-700/50 hover:border-purple-400/50 hover:from-slate-900/95 hover:to-slate-950/95 backdrop-blur-sm hover:shadow-purple-500/30'
                     }`}
                   >
                     {/* Coming Soon Badge */}
@@ -122,12 +122,12 @@ export const AgentList: React.FC<AgentListProps> = ({
 
                     {/* Icon with Background */}
                     <div className="flex justify-center mb-4">
-                      <div className={`relative flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-400/30 transition-all duration-300 ${
-                        !isDisabled && 'group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-lg group-hover:shadow-blue-500/30'
+                      <div className={`relative flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 border border-purple-400/40 shadow-lg shadow-purple-500/30 transition-all duration-300 ${
+                        !isDisabled && 'group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-xl group-hover:shadow-purple-500/50'
                       }`}>
                         <span className="text-5xl">{agentIcon}</span>
                         {!isDisabled && (
-                          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-400/0 to-cyan-400/0 group-hover:from-blue-400/10 group-hover:to-cyan-400/10 transition-all duration-300" />
+                          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-400/0 to-pink-400/0 group-hover:from-purple-400/10 group-hover:to-pink-400/10 transition-all duration-300" />
                         )}
                       </div>
                     </div>
@@ -138,21 +138,21 @@ export const AgentList: React.FC<AgentListProps> = ({
                     </h3>
 
                     {/* Description */}
-                    <p className="text-sm text-blue-200/80 text-center line-clamp-2 mb-4 min-h-[2.5rem]">
+                    <p className="text-sm text-slate-300/80 text-center line-clamp-2 mb-4 min-h-[2.5rem] font-light">
                       {agent.description}
                     </p>
 
                     {/* Capabilities Count */}
-                    <div className="flex items-center justify-center gap-2 pt-3 border-t border-white/10">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 rounded-lg border border-blue-400/30">
+                    <div className="flex items-center justify-center gap-2 pt-3 border-t border-slate-700/50">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600/20 via-purple-600/20 to-pink-600/20 rounded-lg border border-purple-400/40 shadow-sm shadow-purple-500/20">
                         <span className="text-sm">⚡</span>
-                        <span className="text-xs font-semibold text-blue-200">{agent.capabilities.length} capabilities</span>
+                        <span className="text-xs font-semibold text-purple-300">{agent.capabilities.length} capabilities</span>
                       </div>
                     </div>
 
                     {/* Hover Effect Border */}
                     {!isDisabled && (
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/0 to-cyan-500/0 group-hover:from-blue-500/5 group-hover:to-cyan-500/5 transition-all duration-300 pointer-events-none" />
+                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-500/0 to-pink-500/0 group-hover:from-purple-500/5 group-hover:to-pink-500/5 transition-all duration-300 pointer-events-none" />
                     )}
                   </div>
                 );
@@ -163,11 +163,11 @@ export const AgentList: React.FC<AgentListProps> = ({
       })}
       {filteredAgents.length === 0 && (
         <div className="text-center py-16">
-          <div className="inline-block p-6 rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900/80 border-2 border-white/10 mb-4">
+          <div className="inline-block p-6 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-700/50 mb-4 shadow-xl">
             <div className="text-6xl mb-4">🔍</div>
           </div>
           <h3 className="text-xl font-bold text-white mb-2">No Agents Found</h3>
-          <p className="text-blue-200/70">Try adjusting your search query: "{searchQuery}"</p>
+          <p className="text-slate-300/70 font-light">Try adjusting your search query: "{searchQuery}"</p>
         </div>
       )}
     </div>

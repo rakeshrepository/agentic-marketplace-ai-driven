@@ -17,17 +17,17 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   const totalCount = Object.values(agentCounts).reduce((sum, count) => sum + count, 0);
 
   return (
-    <div className="sticky top-0 z-10 backdrop-blur-md bg-slate-900/95 border-b border-white/10 shadow-xl">
+    <div className="sticky top-0 z-10 backdrop-blur-md bg-slate-900/95 border-b border-purple-500/20 shadow-2xl shadow-purple-900/20">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center gap-3 overflow-x-auto py-4 scrollbar-thin scrollbar-thumb-blue-500/50 scrollbar-track-transparent">
+        <div className="flex items-center gap-3 overflow-x-auto py-4 scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-transparent">
           {/* All Category */}
           <button
             onClick={() => onSelectCategory('all')}
             className={`
               flex items-center gap-2 px-5 py-3 rounded-xl font-semibold whitespace-nowrap transition-all duration-300 transform hover:scale-105
               ${selectedCategory === 'all'
-                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-500/50'
-                : 'bg-white/10 text-blue-200 hover:bg-white/15 hover:text-white border border-white/10'
+                ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/60'
+                : 'bg-slate-800/60 text-purple-200 hover:bg-slate-800/80 hover:text-white border border-purple-500/30'
               }
             `}
           >
@@ -36,8 +36,8 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
             <span className={`
               text-xs px-2.5 py-1 rounded-full font-bold
               ${selectedCategory === 'all'
-                ? 'bg-white/25 text-white'
-                : 'bg-blue-500/30 text-blue-200'
+                ? 'bg-white/30 text-white shadow-sm'
+                : 'bg-purple-500/30 text-purple-200'
               }
             `}>
               {totalCount}
@@ -56,8 +56,8 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                 className={`
                   flex items-center gap-2 px-5 py-3 rounded-xl font-semibold whitespace-nowrap transition-all duration-300 transform hover:scale-105
                   ${isSelected
-                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-500/50'
-                    : 'bg-white/10 text-blue-200 hover:bg-white/15 hover:text-white border border-white/10'
+                    ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/60'
+                    : 'bg-slate-800/60 text-purple-200 hover:bg-slate-800/80 hover:text-white border border-purple-500/30'
                   }
                 `}
               >
@@ -66,8 +66,8 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
                 <span className={`
                   text-xs px-2.5 py-1 rounded-full font-bold
                   ${isSelected
-                    ? 'bg-white/25 text-white'
-                    : 'bg-blue-500/30 text-blue-200'
+                    ? 'bg-white/30 text-white shadow-sm'
+                    : 'bg-purple-500/30 text-purple-200'
                   }
                 `}>
                   {count}

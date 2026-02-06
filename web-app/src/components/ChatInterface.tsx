@@ -102,17 +102,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onBack }) =
   };
 
   return (
-    <div className="flex flex-col h-full bg-white/5 backdrop-blur-sm rounded-xl shadow-2xl border border-white/10">
-      <div className="p-5 border-b border-white/10 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-sm rounded-t-xl">
+    <div className="flex flex-col h-full bg-slate-900/60 backdrop-blur-sm rounded-xl shadow-2xl border border-purple-500/30">
+      <div className="p-5 border-b border-purple-500/30 bg-gradient-to-r from-indigo-600/20 via-purple-600/20 to-pink-600/20 backdrop-blur-sm rounded-t-xl shadow-lg shadow-purple-900/30">
         <div className="flex items-center justify-between">
           <div className="flex-1">
-            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-300 to-cyan-300 bg-clip-text text-transparent">{agent.name}</h2>
-            <p className="text-sm text-blue-200/70 mt-1">Category: {agent.category}</p>
+            <h2 className="text-xl font-bold bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent drop-shadow-lg">{agent.name}</h2>
+            <p className="text-sm text-slate-300/80 mt-1 font-light">Category: {agent.category}</p>
           </div>
           {onBack && (
             <button
               onClick={onBack}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all duration-200 border border-white/20"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800/60 hover:bg-slate-800/80 text-white rounded-lg transition-all duration-200 border border-purple-500/30 shadow-md shadow-purple-500/20 hover:shadow-lg hover:shadow-purple-500/30"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -133,19 +133,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onBack }) =
               <div
                 className={`max-w-[80%] rounded-xl p-4 ${
                   message.role === 'user'
-                    ? 'bg-gradient-to-br from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/50'
-                    : 'bg-white/10 backdrop-blur-sm text-white border border-white/10'
+                    ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/50'
+                    : 'bg-slate-800/60 backdrop-blur-sm text-white border border-purple-500/30'
                 }`}
               >
                 <p className="whitespace-pre-wrap">{message.content}</p>
                 {message.data !== undefined && (
-                  <pre className="mt-3 p-3 bg-slate-900/50 text-green-300 rounded-lg text-xs overflow-x-auto border border-green-500/20">
+                  <pre className="mt-3 p-3 bg-slate-950/70 text-emerald-300 rounded-lg text-xs overflow-x-auto border border-emerald-500/30 shadow-inner">
                     {String(formatData(message.data))}
                   </pre>
                 )}
                 <p
                   className={`text-xs mt-2 ${
-                    message.role === 'user' ? 'text-blue-100' : 'text-blue-200/60'
+                    message.role === 'user' ? 'text-purple-100' : 'text-slate-400'
                   }`}
                 >
                   {message.timestamp.toLocaleTimeString()}
@@ -158,9 +158,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onBack }) =
           <div className="flex justify-start">
             <div className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-xl p-4">
               <div className="flex space-x-2">
-                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-cyan-400 rounded-full animate-bounce animation-delay-100" />
-                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce animation-delay-200" />
+                <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce animation-delay-100" />
+                <div className="w-2 h-2 bg-pink-400 rounded-full animate-bounce animation-delay-200" />
               </div>
             </div>
           </div>
@@ -168,20 +168,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onBack }) =
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-5 border-t border-white/10">
+      <form onSubmit={handleSubmit} className="p-5 border-t border-purple-500/30">
         <div className="flex gap-3">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 px-5 py-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-blue-200/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            className="flex-1 px-5 py-3 bg-slate-800/60 backdrop-blur-sm border border-purple-500/30 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all shadow-md shadow-purple-900/20"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-medium rounded-xl hover:shadow-lg hover:shadow-blue-500/50 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-300"
+            className="px-6 py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white font-medium rounded-xl hover:shadow-xl hover:shadow-purple-500/50 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-300"
           >
             Send
           </button>
