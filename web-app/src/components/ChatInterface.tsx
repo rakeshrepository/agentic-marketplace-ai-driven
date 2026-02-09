@@ -74,7 +74,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ agent, onBack }) =
           ? response.message || 'Operation completed successfully'
           : response.error || 'An error occurred',
         timestamp: new Date(),
-        data: response.data,
+        // Only include data if it's not null and not empty
+        ...(response.data != null && response.data !== '' && response.data !== '[]' && response.data !== '{}' && (
+          Array.isArray(response.data) ? response.data.length > 0 : true
+        ) ? { data: response.data } : {}),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
