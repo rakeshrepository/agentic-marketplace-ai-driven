@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Agent, AgentRequest, AgentResponse } from '../types';
+import { Agent, AgentRequest, AgentResponse, Category } from '../types';
 
 // In Docker environment, this will be proxied through nginx
 // In development, Vite proxy handles it
@@ -13,6 +13,16 @@ export const getAllAgents = async (): Promise<Agent[]> => {
     return response.data.map((agent: any) => transformAgent(agent));
   } catch (error) {
     console.error('Error fetching agents:', error);
+    return [];
+  }
+};
+
+export const getAllCategories = async (): Promise<Category[]> => {
+  try {
+    const response = await axios.get(`${AGENT_REGISTRY_URL}/api/categories`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching categories:', error);
     return [];
   }
 };

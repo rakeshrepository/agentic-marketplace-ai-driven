@@ -15,6 +15,13 @@
     <name>Agent Registry Service</name>
 
     <dependencies>
+        <!-- Agent SDK -->
+        <dependency>
+            <groupId>com.agentic.marketplace</groupId>
+            <artifactId>agent-sdk</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

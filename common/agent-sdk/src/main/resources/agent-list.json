@@ -5,7 +5,7 @@
       "name": "Kafka Topic Management Agent",
       "description": "Manage Kafka topics using natural language. Create, list, delete, and describe topics in your Kafka cluster.",
       "category": "infrastructure",
-      "endpoint": "http://topic-management-agent:8080",
+      "endpoint": "/agents/topic-management-agent",
       "icon": "kafka",
       "capabilities": [
         "create-topic",
@@ -18,9 +18,9 @@
     {
       "id": "database-agent",
       "name": "Database Management Agent",
-      "description": "Manage database tables using natural language. Create, list, describe, and drop tables in your H2 database.",
+      "description": "🗄️ Your intelligent database assistant! Design schemas, manage tables, and query data using simple conversation. Perfect for developers who want to skip the SQL syntax and just get things done.\n\n💡 Try these:\n• \"Create a users table with id, email, and created_at\"\n• \"Show me all tables in the database\"\n• \"What columns does the users table have?\"\n• \"Add an age column to the users table\"",
       "category": "infrastructure",
-      "endpoint": "http://database-management-agent:8082",
+      "endpoint": "/agents/database-management-agent",
       "icon": "database",
       "capabilities": [
         "create-table",
@@ -41,20 +41,6 @@
         "cache-management",
         "key-operations",
         "performance-monitoring"
-      ],
-      "status": "coming-soon"
-    },
-    {
-      "id": "mongodb-agent",
-      "name": "MongoDB Document Agent",
-      "description": "Manage MongoDB collections, indexes, and perform document operations with natural language.",
-      "category": "infrastructure",
-      "endpoint": "http://mongodb-agent:8086",
-      "icon": "database",
-      "capabilities": [
-        "collection-management",
-        "document-operations",
-        "index-optimization"
       ],
       "status": "coming-soon"
     },

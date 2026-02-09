@@ -1,7 +1,6 @@
 package com.agentic.marketplace.mcp.controller;
 
-import com.agentic.marketplace.mcp.model.TableDetails;
-import com.agentic.marketplace.mcp.model.TableRequest;
+import com.agentic.marketplace.mcp.model.*;
 import com.agentic.marketplace.mcp.service.DatabaseService;
 import com.agentic.marketplace.sdk.model.AgentResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tables")
@@ -130,6 +130,184 @@ public class TableController {
                     .body(AgentResponse.builder()
                             .success(false)
                             .message("Failed to drop table")
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+    
+    // ============== TABLE ALTERATION ==============
+    
+    @PutMapping("/{tableName}")
+    public ResponseEntity<AgentResponse> alterTable(
+            @PathVariable("tableName") String tableName,
+            @RequestBody AlterTableRequest request) {
+        try {
+            log.info("Received request to alter table: {} with action: {}", tableName, request.getAction());
+            
+            if (!databaseService.tableExists(tableName)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(AgentResponse.builder()
+                                .success(false)
+                                .message("Table not found: " + tableName)
+                                .build());
+            }
+            
+            databaseService.alterTable(tableName, request);
+            
+            return ResponseEntity.ok(AgentResponse.builder()
+                    .success(true)
+                    .message("Table altered successfully: " + tableName)
+                    .data(request)
+                    .build());
+        } catch (Exception e) {
+            log.error("Error altering table", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(AgentResponse.builder()
+                            .success(false)
+                            .message("Failed to alter table")
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+    
+    // ============== DATA OPERATIONS ==============
+    
+    @PostMapping("/{tableName}/data")
+    public ResponseEntity<AgentResponse> insertData(
+            @PathVariable("tableName") String tableName,
+            @RequestBody Map<String, Object> data) {
+        try {
+            log.info("Received request to insert data into table: {}", tableName);
+            
+            if (!databaseService.tableExists(tableName)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(AgentResponse.builder()
+                                .success(false)
+                                .message("Table not found: " + tableName)
+                                .build());
+            }
+            
+            Map<String, Object> result = databaseService.insertData(tableName, data);
+            
+            return ResponseEntity.ok(AgentResponse.builder()
+                    .success(true)
+                    .message("Data inserted successfully into: " + tableName)
+                    .data(result)
+                    .build());
+        } catch (Exception e) {
+            log.error("Error inserting data", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(AgentResponse.builder()
+                            .success(false)
+                            .message("Failed to insert data")
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+    
+    @GetMapping("/{tableName}/data")
+    public ResponseEntity<AgentResponse> queryData(
+            @PathVariable("tableName") String tableName,
+            @RequestBody(required = false) QueryRequest request) {
+        try {
+            log.info("Received request to query data from table: {}", tableName);
+            
+            if (!databaseService.tableExists(tableName)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(AgentResponse.builder()
+                                .success(false)
+                                .message("Table not found: " + tableName)
+                                .build());
+            }
+            
+            // Use empty request if none provided
+            if (request == null) {
+                request = new QueryRequest();
+            }
+            
+            List<Map<String, Object>> results = databaseService.queryData(tableName, request);
+            
+            return ResponseEntity.ok(AgentResponse.builder()
+                    .success(true)
+                    .message("Query returned " + results.size() + " row(s)")
+                    .data(results)
+                    .build());
+        } catch (Exception e) {
+            log.error("Error querying data", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(AgentResponse.builder()
+                            .success(false)
+                            .message("Failed to query data")
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+    
+    @PutMapping("/{tableName}/data")
+    public ResponseEntity<AgentResponse> updateData(
+            @PathVariable("tableName") String tableName,
+            @RequestBody DataRequest request) {
+        try {
+            log.info("Received request to update data in table: {}", tableName);
+            
+            if (!databaseService.tableExists(tableName)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(AgentResponse.builder()
+                                .success(false)
+                                .message("Table not found: " + tableName)
+                                .build());
+            }
+            
+            int rowsAffected = databaseService.updateData(
+                    tableName,
+                    request.getData(),
+                    request.getWhereConditions()
+            );
+            
+            return ResponseEntity.ok(AgentResponse.builder()
+                    .success(true)
+                    .message("Updated " + rowsAffected + " row(s) in table: " + tableName)
+                    .data(Map.of("rowsAffected", rowsAffected))
+                    .build());
+        } catch (Exception e) {
+            log.error("Error updating data", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(AgentResponse.builder()
+                            .success(false)
+                            .message("Failed to update data")
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+    
+    @DeleteMapping("/{tableName}/data")
+    public ResponseEntity<AgentResponse> deleteData(
+            @PathVariable("tableName") String tableName,
+            @RequestBody Map<String, Object> whereConditions) {
+        try {
+            log.info("Received request to delete data from table: {}", tableName);
+            
+            if (!databaseService.tableExists(tableName)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(AgentResponse.builder()
+                                .success(false)
+                                .message("Table not found: " + tableName)
+                                .build());
+            }
+            
+            int rowsAffected = databaseService.deleteData(tableName, whereConditions);
+            
+            return ResponseEntity.ok(AgentResponse.builder()
+                    .success(true)
+                    .message("Deleted " + rowsAffected + " row(s) from table: " + tableName)
+                    .data(Map.of("rowsAffected", rowsAffected))
+                    .build());
+        } catch (Exception e) {
+            log.error("Error deleting data", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(AgentResponse.builder()
+                            .success(false)
+                            .message("Failed to delete data")
                             .error(e.getMessage())
                             .build());
         }

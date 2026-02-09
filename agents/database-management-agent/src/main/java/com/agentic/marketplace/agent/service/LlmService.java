@@ -1,6 +1,10 @@
 package com.agentic.marketplace.agent.service;
 
 import com.agentic.marketplace.agent.model.ParsedIntent;
+import com.agentic.marketplace.sdk.model.ConversationMessage;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Interface for LLM providers (Ollama, OpenAI, etc.)
@@ -8,9 +12,9 @@ import com.agentic.marketplace.agent.model.ParsedIntent;
 public interface LlmService {
     
     /**
-     * Parse user's natural language query into structured intent
+     * Parse user's natural language query into structured intent with conversation context
      */
-    ParsedIntent parseIntent(String userQuery);
+    ParsedIntent parseIntent(String userQuery, List<ConversationMessage> conversationHistory, Map<String, Object> context);
     
     /**
      * Generate a natural language success response
@@ -21,4 +25,9 @@ public interface LlmService {
      * Generate an intelligent error suggestion
      */
     String generateErrorSuggestion(String errorContext);
+    
+    /**
+     * Generate a friendly validation error message
+     */
+    String generateValidationError(String userQuery, ParsedIntent intent, String validationError);
 }

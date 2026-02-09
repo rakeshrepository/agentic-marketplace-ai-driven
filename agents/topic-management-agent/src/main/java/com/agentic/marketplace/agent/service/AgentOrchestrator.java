@@ -53,6 +53,23 @@ public class AgentOrchestrator {
             ParsedIntent intent = llmService.parseIntent(request.getQuery(), recentHistory, context);
             log.info("Parsed intent: {}", intent);
 
+            // Check if this is a help query
+            if (intent.getAction() != null && intent.getAction().equalsIgnoreCase("HELP")) {
+                // Let the LLM generate a natural help response based on its knowledge
+                String helpResponse = llmService.generateSuccessResponse(
+                    request.getQuery(),
+                    "HELP",
+                    null,
+                    "I'm a Kafka Topic Management Agent. I can help you create, list, describe, and delete Kafka topics through natural language commands."
+                );
+                conversationService.addAssistantMessage(sessionId, helpResponse, null);
+                return AgentResponse.builder()
+                        .success(true)
+                        .message(helpResponse)
+                        .sessionId(sessionId)
+                        .build();
+            }
+
             // Step 2: Validate action
             if (intent.getAction() == null || intent.getAction().isBlank()) {
                 String errorMsg = "Could not determine the action. Please specify if you want to create, list, delete, or describe topics.";

@@ -5,6 +5,9 @@ import com.agentic.marketplace.registry.model.AgentCapability;
 import com.agentic.marketplace.registry.model.Category;
 import com.agentic.marketplace.registry.repository.AgentRepository;
 import com.agentic.marketplace.registry.repository.CategoryRepository;
+import com.agentic.marketplace.sdk.loader.AgentRegistryLoader;
+import com.agentic.marketplace.sdk.model.AgentMetadata;
+import com.agentic.marketplace.sdk.model.AgentRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -94,11 +97,57 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void initializeAgents() {
-        // Infrastructure Agents
+        log.info("Loading agents from agent-list.json...");
+        
+        try {
+            AgentRegistry registry = AgentRegistryLoader.loadRegistry();
+            
+            for (AgentMetadata agentMetadata : registry.getAgents()) {
+                log.info("Creating agent: {} with endpoint: {}", agentMetadata.getId(), agentMetadata.getEndpoint());
+                
+                agentRepository.save(createAgent(
+                    agentMetadata.getId(),
+                    agentMetadata.getName(),
+                    agentMetadata.getDescription(),
+                    agentMetadata.getCategory(),
+                    agentMetadata.getEndpoint(), // This now comes from agent-list.json - SINGLE SOURCE OF TRUTH
+                    agentMetadata.getIcon(),
+                    getColorForCategory(agentMetadata.getCategory()),
+                    agentMetadata.getStatus(),
+                    agentMetadata.getCapabilities()
+                ));
+            }
+            
+            log.info("Successfully loaded {} agents from agent-list.json", registry.getAgents().size());
+        } catch (Exception e) {
+            log.error("Failed to load agents from agent-list.json. Falling back to hardcoded agents.", e);
+            initializeAgentsHardcoded();
+        }
+    }
+    
+    private String getColorForCategory(String category) {
+        return switch (category) {
+            case "infrastructure" -> "#FF6B6B";
+            case "devops" -> "#326CE5";
+            case "developer-tools" -> "#F7DF1E";
+            case "cicd-automation" -> "#2088FF";
+            case "data-analytics" -> "#9B59B6";
+            case "security-monitoring" -> "#E74C3C";
+            case "ai-intelligent" -> "#3498DB";
+            case "integration-hub" -> "#1ABC9C";
+            case "custom-solutions" -> "#95A5A6";
+            default -> "#4ECDC4";
+        };
+    }
+    
+    private void initializeAgentsHardcoded() {
+        log.warn("Using hardcoded agent initialization as fallback");
+        
+        // Infrastructure Agents - USING NGINX PROXY PATHS
         agentRepository.save(createAgent(
             "topic-management-agent", "Kafka Topic Management Agent",
             "Manage Kafka topics using natural language. Create, list, delete, and describe topics in your Kafka cluster.",
-            "infrastructure", "http://topic-management-agent:8080/api/agent",
+            "infrastructure", "/agents/topic-management-agent",
             "kafka", "#FF6B6B", "active",
             Arrays.asList("create-topic", "list-topics", "delete-topic", "describe-topic")
         ));
@@ -106,7 +155,7 @@ public class DataInitializer implements CommandLineRunner {
         agentRepository.save(createAgent(
             "database-agent", "Database Management Agent",
             "Manage database tables using natural language. Create, list, describe, and drop tables in your H2 database.",
-            "infrastructure", "http://database-management-agent:8082/api/database-agent",
+            "infrastructure", "/agents/database-management-agent",
             "database", "#4ECDC4", "active",
             Arrays.asList("create-table", "list-tables", "describe-table", "drop-table")
         ));
@@ -117,14 +166,6 @@ public class DataInitializer implements CommandLineRunner {
             "infrastructure", "http://redis-agent:8085/api/redis-agent",
             "storage", "#95E1D3", "coming-soon",
             Arrays.asList("cache-management", "key-operations", "performance-monitoring")
-        ));
-        
-        agentRepository.save(createAgent(
-            "mongodb-agent", "MongoDB Document Agent",
-            "Manage MongoDB collections, indexes, and perform document operations with natural language.",
-            "infrastructure", "http://mongodb-agent:8086/api/mongodb-agent",
-            "database", "#38B2AC", "coming-soon",
-            Arrays.asList("collection-management", "document-operations", "index-optimization")
         ));
 
         // DevOps Agents

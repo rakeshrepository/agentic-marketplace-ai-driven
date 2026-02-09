@@ -1,8 +1,6 @@
 package com.agentic.marketplace.mcp.service;
 
-import com.agentic.marketplace.mcp.model.ColumnInfo;
-import com.agentic.marketplace.mcp.model.TableDetails;
-import com.agentic.marketplace.mcp.model.TableRequest;
+import com.agentic.marketplace.mcp.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -159,5 +158,309 @@ public class DatabaseService {
      */
     private String quoteIdentifier(String identifier) {
         return "\"" + identifier + "\"";
+    }
+    
+    // ============== USER MANAGEMENT ==============
+    
+    public void createUser(UserRequest request) {
+        log.info("Creating user: {}", request.getUsername());
+        
+        // Create user with password
+        String createUserSql = "CREATE USER " + quoteIdentifier(request.getUsername()) + 
+                              " PASSWORD '" + request.getPassword() + "'";
+        jdbcTemplate.execute(createUserSql);
+        
+        // Grant privileges if provided
+        if (request.getPrivileges() != null && !request.getPrivileges().isEmpty()) {
+            for (String privilege : request.getPrivileges()) {
+                grantPrivilege(request.getUsername(), privilege, null);
+            }
+        }
+        
+        log.info("User created successfully: {}", request.getUsername());
+    }
+    
+    public List<String> listUsers() {
+        log.info("Listing all users");
+        String sql = "SELECT NAME FROM INFORMATION_SCHEMA.USERS WHERE ADMIN = FALSE";
+        List<String> users = jdbcTemplate.queryForList(sql, String.class);
+        log.info("Found {} users", users.size());
+        return users;
+    }
+    
+    public UserDetails getUserDetails(String username) {
+        log.info("Getting details for user: {}", username);
+        
+        String checkUserSql = "SELECT NAME, ADMIN FROM INFORMATION_SCHEMA.USERS WHERE NAME = ?";
+        List<Map<String, Object>> result = jdbcTemplate.queryForList(checkUserSql, username.toUpperCase());
+        
+        if (result.isEmpty()) {
+            throw new RuntimeException("User not found: " + username);
+        }
+        
+        Map<String, Object> userInfo = result.get(0);
+        boolean isAdmin = (Boolean) userInfo.get("ADMIN");
+        
+        // Get user privileges
+        String privilegeSql = "SELECT TABLE_SCHEMA, TABLE_NAME, PRIVILEGE_TYPE " +
+                             "FROM INFORMATION_SCHEMA.TABLE_PRIVILEGES WHERE GRANTEE = ?";
+        List<Map<String, Object>> privileges = jdbcTemplate.queryForList(privilegeSql, username.toUpperCase());
+        
+        List<String> privilegeList = privileges.stream()
+                .map(p -> p.get("PRIVILEGE_TYPE") + " ON " + p.get("TABLE_SCHEMA") + "." + p.get("TABLE_NAME"))
+                .collect(Collectors.toList());
+        
+        UserDetails details = new UserDetails();
+        details.setUsername(username);
+        details.setAdmin(isAdmin);
+        details.setPrivileges(privilegeList);
+        
+        log.info("User {} has {} privileges", username, privilegeList.size());
+        return details;
+    }
+    
+    public void updateUser(String username, UserRequest request) {
+        log.info("Updating user: {}", username);
+        
+        // Update password if provided
+        if (request.getPassword() != null && !request.getPassword().isEmpty()) {
+            String sql = "ALTER USER " + quoteIdentifier(username) + 
+                        " SET PASSWORD '" + request.getPassword() + "'";
+            jdbcTemplate.execute(sql);
+            log.info("Password updated for user: {}", username);
+        }
+        
+        // Update privileges if provided
+        if (request.getPrivileges() != null) {
+            // Revoke all existing privileges first
+            String revokeAllSql = "REVOKE ALL ON SCHEMA PUBLIC FROM " + quoteIdentifier(username);
+            try {
+                jdbcTemplate.execute(revokeAllSql);
+            } catch (Exception e) {
+                log.debug("No existing privileges to revoke for user: {}", username);
+            }
+            
+            // Grant new privileges
+            for (String privilege : request.getPrivileges()) {
+                grantPrivilege(username, privilege, null);
+            }
+        }
+        
+        log.info("User updated successfully: {}", username);
+    }
+    
+    public void deleteUser(String username) {
+        log.info("Deleting user: {}", username);
+        String sql = "DROP USER IF EXISTS " + quoteIdentifier(username);
+        jdbcTemplate.execute(sql);
+        log.info("User deleted successfully: {}", username);
+    }
+    
+    public void grantPrivilege(String username, String privilege, String tableName) {
+        log.info("Granting {} privilege to user: {}", privilege, username);
+        
+        String sql;
+        if (tableName != null && !tableName.isEmpty()) {
+            sql = "GRANT " + privilege + " ON " + quoteIdentifier(tableName) + 
+                  " TO " + quoteIdentifier(username);
+        } else {
+            sql = "GRANT " + privilege + " TO " + quoteIdentifier(username);
+        }
+        
+        jdbcTemplate.execute(sql);
+        log.info("Privilege granted successfully");
+    }
+    
+    public void revokePrivilege(String username, String privilege, String tableName) {
+        log.info("Revoking {} privilege from user: {}", privilege, username);
+        
+        String sql;
+        if (tableName != null && !tableName.isEmpty()) {
+            sql = "REVOKE " + privilege + " ON " + quoteIdentifier(tableName) + 
+                  " FROM " + quoteIdentifier(username);
+        } else {
+            sql = "REVOKE " + privilege + " FROM " + quoteIdentifier(username);
+        }
+        
+        jdbcTemplate.execute(sql);
+        log.info("Privilege revoked successfully");
+    }
+    
+    public boolean userExists(String username) {
+        String sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.USERS WHERE NAME = ?";
+        Integer count = jdbcTemplate.queryForObject(sql, new Object[]{username.toUpperCase()}, Integer.class);
+        return count != null && count > 0;
+    }
+    
+    // ============== DATA OPERATIONS ==============
+    
+    public Map<String, Object> insertData(String tableName, Map<String, Object> data) {
+        log.info("Inserting data into table: {}", tableName);
+        
+        List<String> columns = new ArrayList<>(data.keySet());
+        List<Object> values = new ArrayList<>(data.values());
+        
+        String columnList = columns.stream()
+                .map(this::quoteIdentifier)
+                .collect(Collectors.joining(", "));
+        
+        String placeholders = columns.stream()
+                .map(c -> "?")
+                .collect(Collectors.joining(", "));
+        
+        String sql = "INSERT INTO " + quoteIdentifier(tableName) + 
+                    " (" + columnList + ") VALUES (" + placeholders + ")";
+        
+        jdbcTemplate.update(sql, values.toArray());
+        log.info("Data inserted successfully into: {}", tableName);
+        
+        return data;
+    }
+    
+    public List<Map<String, Object>> queryData(String tableName, QueryRequest request) {
+        log.info("Querying data from table: {}", tableName);
+        
+        StringBuilder sql = new StringBuilder("SELECT ");
+        
+        // Select columns
+        if (request.getColumns() != null && !request.getColumns().isEmpty()) {
+            String columnList = request.getColumns().stream()
+                    .map(this::quoteIdentifier)
+                    .collect(Collectors.joining(", "));
+            sql.append(columnList);
+        } else {
+            sql.append("*");
+        }
+        
+        sql.append(" FROM ").append(quoteIdentifier(tableName));
+        
+        List<Object> params = new ArrayList<>();
+        
+        // Where conditions
+        if (request.getWhereConditions() != null && !request.getWhereConditions().isEmpty()) {
+            sql.append(" WHERE ");
+            List<String> conditions = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : request.getWhereConditions().entrySet()) {
+                conditions.add(quoteIdentifier(entry.getKey()) + " = ?");
+                params.add(entry.getValue());
+            }
+            sql.append(String.join(" AND ", conditions));
+        }
+        
+        // Order by
+        if (request.getOrderBy() != null && !request.getOrderBy().isEmpty()) {
+            sql.append(" ORDER BY ").append(quoteIdentifier(request.getOrderBy()));
+        }
+        
+        // Limit and offset
+        if (request.getLimit() != null) {
+            sql.append(" LIMIT ").append(request.getLimit());
+        }
+        if (request.getOffset() != null) {
+            sql.append(" OFFSET ").append(request.getOffset());
+        }
+        
+        log.debug("Executing query: {}", sql);
+        List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+        log.info("Query returned {} rows", results.size());
+        
+        return results;
+    }
+    
+    public int updateData(String tableName, Map<String, Object> data, Map<String, Object> whereConditions) {
+        log.info("Updating data in table: {}", tableName);
+        
+        if (data == null || data.isEmpty()) {
+            throw new IllegalArgumentException("No data provided for update");
+        }
+        
+        StringBuilder sql = new StringBuilder("UPDATE ").append(quoteIdentifier(tableName)).append(" SET ");
+        
+        List<Object> params = new ArrayList<>();
+        
+        // Set clause
+        List<String> setClauses = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            setClauses.add(quoteIdentifier(entry.getKey()) + " = ?");
+            params.add(entry.getValue());
+        }
+        sql.append(String.join(", ", setClauses));
+        
+        // Where clause
+        if (whereConditions != null && !whereConditions.isEmpty()) {
+            sql.append(" WHERE ");
+            List<String> conditions = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
+                conditions.add(quoteIdentifier(entry.getKey()) + " = ?");
+                params.add(entry.getValue());
+            }
+            sql.append(String.join(" AND ", conditions));
+        }
+        
+        log.debug("Executing update: {}", sql);
+        int rowsAffected = jdbcTemplate.update(sql.toString(), params.toArray());
+        log.info("Updated {} rows in table: {}", rowsAffected, tableName);
+        
+        return rowsAffected;
+    }
+    
+    public int deleteData(String tableName, Map<String, Object> whereConditions) {
+        log.info("Deleting data from table: {}", tableName);
+        
+        StringBuilder sql = new StringBuilder("DELETE FROM ").append(quoteIdentifier(tableName));
+        
+        List<Object> params = new ArrayList<>();
+        
+        // Where clause
+        if (whereConditions != null && !whereConditions.isEmpty()) {
+            sql.append(" WHERE ");
+            List<String> conditions = new ArrayList<>();
+            for (Map.Entry<String, Object> entry : whereConditions.entrySet()) {
+                conditions.add(quoteIdentifier(entry.getKey()) + " = ?");
+                params.add(entry.getValue());
+            }
+            sql.append(String.join(" AND ", conditions));
+        } else {
+            throw new IllegalArgumentException("WHERE conditions required for delete operation");
+        }
+        
+        log.debug("Executing delete: {}", sql);
+        int rowsAffected = jdbcTemplate.update(sql.toString(), params.toArray());
+        log.info("Deleted {} rows from table: {}", rowsAffected, tableName);
+        
+        return rowsAffected;
+    }
+    
+    // ============== TABLE ALTERATION ==============
+    
+    public void alterTable(String tableName, AlterTableRequest request) {
+        log.info("Altering table: {} with action: {}", tableName, request.getAction());
+        
+        String sql = switch (request.getAction().toUpperCase()) {
+            case "ADD_COLUMN" -> {
+                StringBuilder addSql = new StringBuilder("ALTER TABLE ");
+                addSql.append(quoteIdentifier(tableName))
+                      .append(" ADD COLUMN ")
+                      .append(quoteIdentifier(request.getColumn().getName()))
+                      .append(" ")
+                      .append(request.getColumn().getType());
+                
+                if (!request.getColumn().isNullable()) {
+                    addSql.append(" NOT NULL");
+                }
+                
+                yield addSql.toString();
+            }
+            case "DROP_COLUMN" -> "ALTER TABLE " + quoteIdentifier(tableName) + 
+                                 " DROP COLUMN " + quoteIdentifier(request.getColumn().getName());
+            case "MODIFY_COLUMN" -> "ALTER TABLE " + quoteIdentifier(tableName) + 
+                                   " ALTER COLUMN " + quoteIdentifier(request.getColumn().getName()) + 
+                                   " " + request.getColumn().getType();
+            default -> throw new IllegalArgumentException("Unknown alter action: " + request.getAction());
+        };
+        
+        log.debug("Executing alter table: {}", sql);
+        jdbcTemplate.execute(sql);
+        log.info("Table altered successfully: {}", tableName);
     }
 }

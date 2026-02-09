@@ -18,24 +18,15 @@ public class AgentOrchestrator {
     public AgentResponse processQuery(AgentRequest request) {
         log.info("Processing query: {}", request.getQuery());
 
-        // Step 1: Parse intent using Ollama LLM
-        ParsedIntent intent = ollamaService.parseIntent(request.getQuery());
+        // Step 1: Parse intent using LLM with conversation context (extraction only, no validation)
+        ParsedIntent intent = ollamaService.parseIntent(request.getQuery(), null, null);
         log.info("Parsed intent: {}", intent);
 
-        // Step 2: Validate intent
-        if (!intent.isValid()) {
+        // Step 2: Validate action
+        if (intent.getAction() == null || intent.getAction().isBlank()) {
             return AgentResponse.builder()
                     .success(false)
-                    .error(intent.getErrorMessage() != null 
-                            ? intent.getErrorMessage() 
-                            : "Could not understand the request. Please try rephrasing.")
-                    .build();
-        }
-
-        if (intent.getAction() == null) {
-            return AgentResponse.builder()
-                    .success(false)
-                    .error("Could not determine the action. Please specify if you want to create, list, drop, or describe tables.")
+                    .error("Could not determine the action. Please specify what you want to do (create/list/delete tables, manage users, or work with data).")
                     .build();
         }
 
@@ -93,7 +84,7 @@ public class AgentOrchestrator {
         );
         
         try {
-            String helpfulExplanation = ollamaService.getHelpfulErrorExplanation(errorAnalysisPrompt);
+            String helpfulExplanation = ollamaService.generateErrorSuggestion(errorAnalysisPrompt);
             return AgentResponse.builder()
                     .success(false)
                     .error(helpfulExplanation)

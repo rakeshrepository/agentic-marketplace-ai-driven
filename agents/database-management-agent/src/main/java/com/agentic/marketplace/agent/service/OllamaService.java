@@ -1,76 +1,81 @@
 package com.agentic.marketplace.agent.service;
 
 import com.agentic.marketplace.agent.config.OllamaConfig;
+import com.agentic.marketplace.agent.constants.DatabaseConstants;
 import com.agentic.marketplace.agent.model.OllamaRequest;
 import com.agentic.marketplace.agent.model.OllamaResponse;
 import com.agentic.marketplace.agent.model.ParsedIntent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.agentic.marketplace.agent.prompt.DatabasePrompts;
+import com.agentic.marketplace.agent.util.JsonParsingUtil;
+import com.agentic.marketplace.sdk.model.ConversationMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
-public class OllamaService {
+@ConditionalOnProperty(name = "llm.provider", havingValue = "ollama", matchIfMissing = true)
+public class OllamaService implements LlmService {
 
     private final WebClient ollamaWebClient;
     private final OllamaConfig ollamaConfig;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public OllamaService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient, 
+    public OllamaService(@Qualifier("ollamaWebClient") WebClient ollamaWebClient,
                          OllamaConfig ollamaConfig) {
         this.ollamaWebClient = ollamaWebClient;
         this.ollamaConfig = ollamaConfig;
+        log.info("Using Ollama LLM Provider with model: {}", ollamaConfig.getModel());
     }
 
-    private static final String SYSTEM_PROMPT = """
-        You are a database management assistant. Parse the user's natural language request and extract the intent.
-        
-        Respond ONLY with valid JSON in this exact format:
-        {
-            "action": "create|list|drop|describe",
-            "tableName": "table-name-if-applicable",
-            "columns": [{"name": "column1", "type": "VARCHAR(255)"}, {"name": "column2", "type": "INTEGER"}],
-            "valid": true|false,
-            "errorMessage": "error-message-if-invalid"
-        }
-        
-        Rules:
-        - action must be one of: create, list, drop, describe
-        - For "list" action, tableName and columns can be null
-        - For "create" action, parse column names and infer SQL types (VARCHAR(255) for text, INTEGER for numbers, etc.)
-        - For "drop" and "describe" actions, only tableName is needed
-        - Set valid=false if the request doesn't make sense for database management
-        
-        Examples:
-        - "Create a table called users with columns id, username, email" -> {"action":"create","tableName":"users","columns":[{"name":"id","type":"INTEGER"},{"name":"username","type":"VARCHAR(255)"},{"name":"email","type":"VARCHAR(255)"}],"valid":true,"errorMessage":null}
-        - "List all tables" -> {"action":"list","tableName":null,"columns":null,"valid":true,"errorMessage":null}
-        - "Drop table users" -> {"action":"drop","tableName":"users","columns":null,"valid":true,"errorMessage":null}
-        - "Describe table orders" -> {"action":"describe","tableName":"orders","columns":null,"valid":true,"errorMessage":null}
-        
-        User request: %s
-        """;
-
-    public ParsedIntent parseIntent(String userQuery) {
-        log.info("Parsing intent for query: {}", userQuery);
+    @Override
+    public ParsedIntent parseIntent(String userQuery, List<ConversationMessage> conversationHistory, Map<String, Object> context) {
+        log.info("Parsing intent with conversation context for query: {}", userQuery);
         
         try {
-            String prompt = String.format(SYSTEM_PROMPT, userQuery);
+            // Build enhanced prompt with conversation history and context
+            StringBuilder promptBuilder = new StringBuilder();
+            
+            // Add conversation history if available
+            if (conversationHistory != null && !conversationHistory.isEmpty()) {
+                promptBuilder.append("CONVERSATION HISTORY:\n");
+                for (ConversationMessage msg : conversationHistory) {
+                    promptBuilder.append(msg.getRole().toUpperCase())
+                        .append(": ")
+                        .append(msg.getContent())
+                        .append("\n");
+                }
+                promptBuilder.append("\n");
+            }
+            
+            // Add stored context (like suggestions from previous response)
+            if (context != null && !context.isEmpty()) {
+                promptBuilder.append("STORED CONTEXT FROM PREVIOUS INTERACTION:\n");
+                context.forEach((key, value) -> 
+                    promptBuilder.append("- ").append(key).append(": ").append(value).append("\n")
+                );
+                promptBuilder.append("\n");
+            }
+            
+            // Add system prompt and current query
+            promptBuilder.append(String.format(DatabasePrompts.INTENT_EXTRACTION_PROMPT, userQuery));
+            
+            String fullPrompt = promptBuilder.toString();
+            log.debug("Full prompt with context:\n{}", fullPrompt);
             
             OllamaRequest request = OllamaRequest.builder()
                     .model(ollamaConfig.getModel())
-                    .prompt(prompt)
+                    .prompt(fullPrompt)
                     .stream(false)
                     .format("json")
-                    .options(OllamaRequest.Options.builder().temperature(0.1).build())
+                    .options(OllamaRequest.Options.builder()
+                            .temperature(DatabaseConstants.LlmTemperature.EXTRACTION)
+                            .build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
@@ -82,65 +87,39 @@ public class OllamaService {
                     .block();
 
             if (response == null || response.getResponse() == null) {
-                return createErrorIntent("Failed to get response from LLM");
+                log.error("Failed to get response from Ollama LLM");
+                return ParsedIntent.builder().build();
             }
 
             log.debug("LLM response: {}", response.getResponse());
-            return parseJsonResponse(response.getResponse());
+            return JsonParsingUtil.parseJsonResponse(response.getResponse());
             
         } catch (Exception e) {
-            log.error("Error parsing intent", e);
-            return createErrorIntent("Error processing request: " + e.getMessage());
+            log.error("Error parsing intent with Ollama", e);
+            return ParsedIntent.builder().build();
         }
     }
 
-    private ParsedIntent parseJsonResponse(String jsonResponse) {
-        try {
-            JsonNode node = objectMapper.readTree(jsonResponse);
-            
-            List<Map<String, String>> columns = new ArrayList<>();
-            if (node.has("columns") && node.get("columns").isArray()) {
-                for (JsonNode colNode : node.get("columns")) {
-                    Map<String, String> column = new HashMap<>();
-                    column.put("name", colNode.get("name").asText());
-                    column.put("type", colNode.get("type").asText());
-                    columns.add(column);
-                }
-            }
-            
-            return ParsedIntent.builder()
-                    .action(getTextValue(node, "action"))
-                    .tableName(getTextValue(node, "tableName"))
-                    .columns(columns.isEmpty() ? null : columns)
-                    .valid(node.has("valid") ? node.get("valid").asBoolean() : true)
-                    .errorMessage(getTextValue(node, "errorMessage"))
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse JSON response: {}", jsonResponse, e);
-            return createErrorIntent("Failed to parse LLM response");
-        }
-    }
-
-    private String getTextValue(JsonNode node, String field) {
-        return node.has(field) && !node.get(field).isNull() ? node.get(field).asText() : null;
-    }
-
-    private ParsedIntent createErrorIntent(String message) {
-        return ParsedIntent.builder()
-                .valid(false)
-                .errorMessage(message)
-                .build();
-    }
-    
-    public String getHelpfulErrorExplanation(String errorAnalysisPrompt) {
-        log.info("Generating helpful error explanation with LLM");
+    @Override
+    public String generateSuccessResponse(String originalQuery, String action, String target, Object resultData) {
+        log.info("Generating success response for action: {}", action);
         
         try {
+            String prompt = String.format(
+                DatabasePrompts.SUCCESS_RESPONSE_PROMPT,
+                originalQuery,
+                action,
+                target != null ? target : "N/A",
+                resultData != null ? resultData.toString() : "{}"
+            );
+            
             OllamaRequest request = OllamaRequest.builder()
                     .model(ollamaConfig.getModel())
-                    .prompt(errorAnalysisPrompt)
+                    .prompt(prompt)
                     .stream(false)
-                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .options(OllamaRequest.Options.builder()
+                            .temperature(DatabaseConstants.LlmTemperature.GENERATION)
+                            .build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
@@ -155,54 +134,30 @@ public class OllamaService {
                 return response.getResponse().trim();
             }
             
-            return "An error occurred while processing your request. Please try again with different table or column names.";
-            
         } catch (Exception e) {
-            log.error("Error generating helpful explanation", e);
-            return "An error occurred while processing your request. Please try again.";
+            log.error("Error generating success response", e);
         }
+        
+        // Fallback response
+        return String.format("Successfully completed %s operation%s", 
+            action, 
+            target != null ? " on " + target : "");
     }
 
-    public String generateSuccessResponse(String userQuery, String action, String tableName, Object mcpResult) {
-        log.info("Generating natural language response for action: {}", action);
-        
-        String resultSummary = mcpResult != null ? mcpResult.toString() : "operation completed";
-        
-        String prompt = String.format("""
-            You are a friendly and helpful database management assistant.
-            
-            The user asked: "%s"
-            
-            You successfully performed: %s operation on table '%s'
-            
-            Result data: %s
-            
-            Generate a natural, conversational response (2-3 sentences) that:
-            - Confirms what was done in a friendly way
-            - Mentions key details naturally (table name, columns if relevant)
-            - Is brief but informative
-            - Uses a casual, helpful tone
-            - You may use emojis sparingly if it feels natural (✅ 🎉 📊 💾)
-            
-            Do NOT:
-            - Use templates or robotic language
-            - Be overly formal or verbose
-            - Include technical jargon unless necessary
-            
-            Response (plain text, conversational):
-            """,
-            userQuery,
-            action,
-            tableName != null ? tableName : "tables",
-            resultSummary
-        );
+    @Override
+    public String generateErrorSuggestion(String errorContext) {
+        log.info("Generating error suggestion");
         
         try {
+            String prompt = String.format(DatabasePrompts.ERROR_SUGGESTION_PROMPT, errorContext);
+            
             OllamaRequest request = OllamaRequest.builder()
                     .model(ollamaConfig.getModel())
                     .prompt(prompt)
                     .stream(false)
-                    .options(OllamaRequest.Options.builder().temperature(0.7).build())
+                    .options(OllamaRequest.Options.builder()
+                            .temperature(DatabaseConstants.LlmTemperature.GENERATION)
+                            .build())
                     .build();
 
             OllamaResponse response = ollamaWebClient.post()
@@ -214,16 +169,55 @@ public class OllamaService {
                     .block();
 
             if (response != null && response.getResponse() != null) {
-                String naturalResponse = response.getResponse().trim();
-                log.debug("Generated natural response: {}", naturalResponse);
-                return naturalResponse;
+                return response.getResponse().trim();
             }
+            
         } catch (Exception e) {
-            log.error("Error generating natural language response", e);
+            log.error("Error generating error suggestion", e);
         }
         
-        // Fallback to simple confirmation if LLM fails
-        return String.format("Successfully completed %s operation on table '%s'", action, tableName);
+        return "An error occurred while processing your request. Please check your input and try again.";
+    }
+
+    @Override
+    public String generateValidationError(String userQuery, ParsedIntent intent, String validationError) {
+        log.info("Generating validation error message");
+        
+        try {
+            String prompt = String.format(
+                DatabasePrompts.VALIDATION_ERROR_PROMPT,
+                userQuery,
+                intent.getAction() != null ? intent.getAction() : "unknown",
+                intent.toString(),
+                validationError
+            );
+            
+            OllamaRequest request = OllamaRequest.builder()
+                    .model(ollamaConfig.getModel())
+                    .prompt(prompt)
+                    .stream(false)
+                    .options(OllamaRequest.Options.builder()
+                            .temperature(DatabaseConstants.LlmTemperature.GENERATION)
+                            .build())
+                    .build();
+
+            OllamaResponse response = ollamaWebClient.post()
+                    .uri("/api/generate")
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(OllamaResponse.class)
+                    .timeout(Duration.ofMillis(ollamaConfig.getTimeout()))
+                    .block();
+
+            if (response != null && response.getResponse() != null) {
+                return response.getResponse().trim();
+            }
+            
+        } catch (Exception e) {
+            log.error("Error generating validation error", e);
+        }
+        
+        return validationError; // Fallback to raw validation error
     }
 }
 

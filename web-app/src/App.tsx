@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Agent, Category } from './types';
-import { getAllAgents } from './services/agentService';
+import { getAllAgents, getAllCategories } from './services/agentService';
 import { AgentList } from './components/AgentList';
 import { ChatInterface } from './components/ChatInterface';
 import { SearchBar } from './components/SearchBar';
@@ -17,30 +17,20 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadAgents();
+    loadData();
   }, []);
 
-  const loadAgents = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const fetchedAgents = await getAllAgents();
+      const [fetchedAgents, fetchedCategories] = await Promise.all([
+        getAllAgents(),
+        getAllCategories()
+      ]);
       setAgents(fetchedAgents);
-      
-      // Extract unique categories from agents
-      const uniqueCategories = new Map<string, Category>();
-      fetchedAgents.forEach(agent => {
-        if (!uniqueCategories.has(agent.category)) {
-          uniqueCategories.set(agent.category, {
-            id: agent.category,
-            name: getCategoryName(agent.category),
-            description: getCategoryDescription(agent.category),
-            icon: getCategoryIcon(agent.category),
-          });
-        }
-      });
-      setCategories(Array.from(uniqueCategories.values()));
+      setCategories(fetchedCategories);
     } catch (error) {
-      console.error('Failed to load agents:', error);
+      console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
     }
@@ -60,33 +50,6 @@ function App() {
     acc[agent.category] = (acc[agent.category] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-
-  const getCategoryName = (id: string): string => {
-    const names: Record<string, string> = {
-      'infrastructure': 'Infrastructure & DevOps',
-      'data-analytics': 'Data & Analytics',
-      'communication': 'Communication',
-    };
-    return names[id] || id;
-  };
-
-  const getCategoryDescription = (id: string): string => {
-    const descriptions: Record<string, string> = {
-      'infrastructure': 'Manage your infrastructure, databases, and messaging systems',
-      'data-analytics': 'Process, analyze, and visualize your data',
-      'communication': 'Email, messaging, and notification management',
-    };
-    return descriptions[id] || '';
-  };
-
-  const getCategoryIcon = (id: string): string => {
-    const icons: Record<string, string> = {
-      'infrastructure': '🏗️',
-      'data-analytics': '📊',
-      'communication': '💬',
-    };
-    return icons[id] || '📁';
-  };
 
   // Render onboarding page
   if (currentPage === 'onboard') {

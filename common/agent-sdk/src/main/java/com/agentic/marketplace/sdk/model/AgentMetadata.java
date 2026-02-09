@@ -21,4 +21,5 @@ public class AgentMetadata {
     private String endpoint;
     private String icon;
     private List<String> capabilities;
+    private String status; // active, coming-soon, deprecated
 }
