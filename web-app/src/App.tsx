@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Agent, Category } from './types';
-import { getAllAgents, getAllCategories } from './services/agentService';
+import { getAllAgents, getAllCategories, deleteAgent } from './services/agentService';
 import { AgentList } from './components/AgentList';
 import { ChatInterface } from './components/ChatInterface';
 import { SearchBar } from './components/SearchBar';
@@ -33,6 +33,30 @@ function App() {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAgent = async (agentId: string) => {
+    if (!confirm('Are you sure you want to delete this agent? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const result = await deleteAgent(agentId);
+      if (result.success) {
+        // Remove from local state
+        setAgents(prevAgents => prevAgents.filter(agent => agent.id !== agentId));
+        // If the deleted agent was selected, clear selection
+        if (selectedAgent?.id === agentId) {
+          setSelectedAgent(null);
+        }
+        alert('Agent deleted successfully!');
+      } else {
+        alert(`Failed to delete agent: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      alert('An error occurred while deleting the agent');
     }
   };
 
@@ -134,6 +158,7 @@ function App() {
                   selectedAgent={selectedAgent}
                   onSelectAgent={setSelectedAgent}
                   searchQuery={searchQuery}
+                  onDeleteAgent={handleDeleteAgent}
                 />
               </div>
             )}

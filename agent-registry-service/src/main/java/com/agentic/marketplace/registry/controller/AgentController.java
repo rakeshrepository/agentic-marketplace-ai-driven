@@ -78,4 +78,26 @@ public class AgentController {
                 .body(new AgentRegistrationResponse(false, "Failed to register agent: " + e.getMessage(), null));
         }
     }
+    
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteAgent(@PathVariable String id) {
+        try {
+            boolean deleted = agentService.deleteAgent(id);
+            if (deleted) {
+                return ResponseEntity.ok().body(new AgentRegistrationResponse(
+                    true,
+                    "Agent deleted successfully",
+                    id
+                ));
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                .body(new AgentRegistrationResponse(false, e.getMessage(), null));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new AgentRegistrationResponse(false, "Failed to delete agent: " + e.getMessage(), null));
+        }
+    }
 }

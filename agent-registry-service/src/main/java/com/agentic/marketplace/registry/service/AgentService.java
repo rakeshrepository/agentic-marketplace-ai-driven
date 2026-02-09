@@ -49,13 +49,16 @@ public class AgentService {
             throw new IllegalArgumentException("Invalid endpoint URL");
         }
         
+        // Transform Docker internal URL to nginx proxy path
+        String endpointUrl = transformToNginxPath(request.getEndpointUrl(), agentId);
+        
         // Create agent entity
         Agent agent = new Agent();
         agent.setId(agentId);
         agent.setName(request.getName());
         agent.setDescription(request.getDescription());
         agent.setCategoryId(request.getCategoryId());
-        agent.setEndpointUrl(request.getEndpointUrl());
+        agent.setEndpointUrl(endpointUrl);
         agent.setHealthCheckPath("/actuator/health");
         agent.setIcon(request.getIcon() != null ? request.getIcon() : "🤖");
         agent.setColor(request.getColor() != null ? request.getColor() : "#6366F1");
@@ -88,6 +91,17 @@ public class AgentService {
         return agentRepository.save(agent);
     }
     
+    private String transformToNginxPath(String dockerUrl, String agentId) {
+        // Convert Docker internal URL (http://agent-name:8080) to nginx proxy path (/agents/agent-name)
+        // Extract the agent name from the Docker URL
+        if (dockerUrl.startsWith("http://") && dockerUrl.contains(":")) {
+            String agentName = dockerUrl.substring(7, dockerUrl.indexOf(":", 7));
+            // Use the actual Docker service name from the URL (not the generated ID)
+            return "/agents/" + agentName;
+        }
+        return dockerUrl; // Return as-is if not a Docker internal URL
+    }
+    
     private String generateAgentId(String name) {
         // Convert name to kebab-case and append short UUID
         String baseId = name.toLowerCase()
@@ -95,6 +109,24 @@ public class AgentService {
             .replaceAll("^-|-$", "");
         String shortUuid = UUID.randomUUID().toString().substring(0, 8);
         return baseId + "-" + shortUuid;
+    }
+    
+    @Transactional
+    public boolean deleteAgent(String agentId) {
+        Optional<Agent> agentOpt = agentRepository.findById(agentId);
+        if (agentOpt.isEmpty()) {
+            return false;
+        }
+        
+        Agent agent = agentOpt.get();
+        // Allow deletion of active and pending agents (hosted agents and self-registered)
+        // Don't allow deletion of coming-soon agents
+        if ("coming-soon".equals(agent.getStatus())) {
+            throw new IllegalArgumentException("Coming-soon agents cannot be deleted");
+        }
+        
+        agentRepository.deleteById(agentId);
+        return true;
     }
     
     private boolean isValidUrl(String url) {

@@ -53,20 +53,78 @@ const transformAgent = (apiAgent: any): Agent => {
 };
 
 const mapIconToType = (icon: string): string => {
+  // Map emoji icons to icon types
   const iconMap: Record<string, string> = {
-    '📊': 'kafka', '🗄️': 'database', '☁️': 'cloud', '💾': 'storage',
-    '⚡': 'redis', '🍃': 'mongodb', '🐘': 'postgres', '🐬': 'mysql',
-    '🖥️': 'server', '📦': 'container', '🐳': 'docker', '☸️': 'kubernetes',
-    '💻': 'code', '🔀': 'git', '🐙': 'github', '🦊': 'gitlab',
-    '📝': 'vscode', '⌨️': 'terminal', '🔧': 'config',
-    '📚': 'book', '📖': 'docs', '📄': 'wiki', '📋': 'readme', '🎓': 'tutorial',
-    '🧪': 'test', '🐛': 'debug', '✅': 'quality', '🔒': 'security', '🛡️': 'shield',
-    '🔄': 'pipeline', '⚙️': 'jenkins', '🔁': 'cicd', '🚀': 'deploy',
-    '📈': 'chart', '📉': 'metrics', '👁️': 'monitor', '🔔': 'alert',
-    '💬': 'chat', '💭': 'support', '📧': 'email',
-    '🤖': 'ai', '🧠': 'brain', '✨': 'magic', '🕸️': 'neural',
-    '🧩': 'puzzle', '🔗': 'integration', '🔌': 'api', '🪝': 'webhook', '💽': 'data',
-    '🔨': 'tool', '🎨': 'extension',
+    // Infrastructure & DevOps
+    '�': 'kafka',
+    '🗄️': 'database',
+    '☁️': 'cloud',
+    '�': 'storage',
+    '⚡': 'redis',
+    '🍃': 'mongodb',
+    '🐘': 'postgres',
+    '🐬': 'mysql',
+    '🖥️': 'server',
+    '📦': 'container',
+    '🐳': 'docker',
+    '☸️': 'kubernetes',
+    
+    // Development Tools
+    '💻': 'code',
+    '�': 'git',
+    '🐙': 'github',
+    '🦊': 'gitlab',
+    '📝': 'vscode',
+    '⌨️': 'terminal',
+    '🔧': 'config',
+    
+    // Documentation & Learning
+    '📚': 'book',
+    '📖': 'docs',
+    '📄': 'wiki',
+    '📋': 'readme',
+    '🎓': 'tutorial',
+    
+    // Testing & Quality
+    '�': 'test',
+    '🐛': 'debug',
+    '✅': 'quality',
+    '🔒': 'security',
+    '�️': 'shield',
+    
+    // CI/CD & Automation
+    '🔄': 'pipeline',
+    '⚙️': 'jenkins',
+    '🔁': 'cicd',
+    '🚀': 'deploy',
+    
+    // Monitoring & Analytics
+    '📈': 'chart',
+    '📉': 'metrics',
+    '👁️': 'monitor',
+    '🔔': 'alert',
+    
+    // Communication
+    '💬': 'chat',
+    '💭': 'support',
+    '📧': 'email',
+    
+    // AI & Intelligence
+    '🤖': 'ai',
+    '🧠': 'brain',
+    '✨': 'magic',
+    '🕸️': 'neural',
+    
+    // Integration
+    '🧩': 'puzzle',
+    '🔗': 'integration',
+    '🔌': 'api',
+    '🪝': 'webhook',
+    '💽': 'data',
+    
+    // Miscellaneous
+    '�': 'tool',
+    '🎨': 'extension',
   };
   return iconMap[icon] || 'default';
 };

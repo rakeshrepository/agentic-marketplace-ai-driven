@@ -6,7 +6,7 @@ export interface Agent {
   endpoint: string;
   icon: string;
   capabilities: string[];
-  status?: 'active' | 'coming-soon' | 'beta' | 'deprecated';
+  status?: 'active' | 'pending' | 'coming-soon' | 'beta' | 'deprecated';
   color?: string;
   exampleQueries?: string[];
 }
