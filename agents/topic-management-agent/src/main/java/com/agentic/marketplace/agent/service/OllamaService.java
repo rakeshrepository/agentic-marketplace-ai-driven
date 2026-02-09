@@ -141,7 +141,18 @@ public class OllamaService implements LlmService {
     public String generateSuccessResponse(String userQuery, String action, String topicName, Object mcpResult) {
         log.info("Generating natural language response for action: {}", action);
         
-        String resultSummary = mcpResult != null ? mcpResult.toString() : "operation completed";
+        // Handle null or empty results gracefully - don't show "null" to user
+        String resultSummary;
+        if (mcpResult == null) {
+            resultSummary = "operation completed successfully";
+        } else {
+            String resultStr = mcpResult.toString();
+            if (resultStr == null || resultStr.trim().isEmpty() || resultStr.equals("null") || resultStr.equals("[]")) {
+                resultSummary = "operation completed successfully";
+            } else {
+                resultSummary = resultStr;
+            }
+        }
         
         String prompt = String.format(KafkaTopicPrompts.SUCCESS_RESPONSE_TEMPLATE,
             userQuery,

@@ -22,6 +22,21 @@ public class AgentOrchestrator {
         ParsedIntent intent = ollamaService.parseIntent(request.getQuery(), null, null);
         log.info("Parsed intent: {}", intent);
 
+        // Check if this is a help query
+        if (intent.getAction() != null && intent.getAction().equalsIgnoreCase("HELP")) {
+            // Let the LLM generate a natural help response based on its knowledge
+            String helpResponse = ollamaService.generateSuccessResponse(
+                request.getQuery(),
+                "HELP",
+                null,
+                "I'm a Database Management Agent. I can help you create, list, describe, and drop tables, manage users, and work with data through natural language commands."
+            );
+            return AgentResponse.builder()
+                    .success(true)
+                    .message(helpResponse)
+                    .build();
+        }
+
         // Step 2: Validate action
         if (intent.getAction() == null || intent.getAction().isBlank()) {
             return AgentResponse.builder()

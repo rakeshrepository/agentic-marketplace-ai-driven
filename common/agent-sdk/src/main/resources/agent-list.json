@@ -3,7 +3,7 @@
     {
       "id": "topic-management-agent",
       "name": "Kafka Topic Management Agent",
-      "description": "Manage Kafka topics using natural language. Create, list, delete, and describe topics in your Kafka cluster.",
+      "description": "⚡ Your intelligent Kafka topic assistant! Manage topics using natural language - no complex commands needed. Perfect for developers who want to streamline their Kafka workflows.\n\n💡 Try these:\n• \"Create a topic called user-events with 5 partitions\"\n• \"Show me all topics in the cluster\"\n• \"Describe the user-events topic\"\n• \"Delete the test-topic\"",
       "category": "infrastructure",
       "endpoint": "/agents/topic-management-agent",
       "icon": "kafka",

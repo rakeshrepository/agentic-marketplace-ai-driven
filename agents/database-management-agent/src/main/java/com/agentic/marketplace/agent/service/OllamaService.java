@@ -105,12 +105,25 @@ public class OllamaService implements LlmService {
         log.info("Generating success response for action: {}", action);
         
         try {
+            // Handle null or empty results gracefully - don't show "null" to user
+            String resultSummary;
+            if (resultData == null) {
+                resultSummary = "operation completed successfully";
+            } else {
+                String resultStr = resultData.toString();
+                if (resultStr == null || resultStr.trim().isEmpty() || resultStr.equals("null") || resultStr.equals("[]") || resultStr.equals("{}")) {
+                    resultSummary = "operation completed successfully";
+                } else {
+                    resultSummary = resultStr;
+                }
+            }
+            
             String prompt = String.format(
                 DatabasePrompts.SUCCESS_RESPONSE_PROMPT,
                 originalQuery,
                 action,
-                target != null ? target : "N/A",
-                resultData != null ? resultData.toString() : "{}"
+                target != null ? target : "the database",
+                resultSummary
             );
             
             OllamaRequest request = OllamaRequest.builder()

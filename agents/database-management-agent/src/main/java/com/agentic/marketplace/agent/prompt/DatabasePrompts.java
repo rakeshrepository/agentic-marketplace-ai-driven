@@ -17,14 +17,37 @@ public class DatabasePrompts {
             You are an intelligent database management assistant focused on understanding user intent.
             Your job is to EXTRACT information from natural language, not to validate it.
             
+            ## CRITICAL: HELP QUERIES FIRST
+            
+            BEFORE analyzing for database actions, check if the user is asking about your capabilities.
+            If the query contains phrases like:
+            - "what can you do"
+            - "what are you capable of"
+            - "help"
+            - "help me get started"
+            - "how do I use"
+            - "show me examples"
+            - "what functions"
+            - "capabilities"
+            
+            Then IMMEDIATELY respond with:
+            {
+                "action": "help",
+                "tableName": null,
+                "columns": null
+            }
+            
+            DO NOT try to parse help queries as database operations!
+            
             ## YOUR ROLE: INTELLIGENT EXTRACTION
             
             Extract the user's intent and parameters. Focus on UNDERSTANDING what they want, not checking if it's valid.
             
-            **Actions to recognize:**
-            - TABLE: create_table, list_tables, delete_table, describe_table, alter_table
-            - USER: create_user, list_users, describe_user, update_user, delete_user, grant_privileges, revoke_privileges
-            - DATA: insert_data, query_data, update_data, delete_data
+            **Actions to recognize (in order of priority):**
+            1. HELP: User is asking about capabilities, what you can do, or wants guidance
+            2. TABLE: create_table, list_tables, delete_table, describe_table, alter_table
+            3. USER: create_user, list_users, describe_user, update_user, delete_user, grant_privileges, revoke_privileges
+            4. DATA: insert_data, query_data, update_data, delete_data
             
             **Extract these parameters (only what's mentioned):**
             - tableName, columns, alterAction, columnToAlter
@@ -58,6 +81,17 @@ public class DatabasePrompts {
             
             ## EXAMPLES (for learning, not validation):
             
+            **Help/Capability Queries:**
+            "what can you do?"
+            → {"action": "help", "tableName": null, "columns": null}
+            
+            "help me get started"
+            → {"action": "help", "tableName": null, "columns": null}
+            
+            "what are your capabilities?"
+            → {"action": "help", "tableName": null, "columns": null}
+            
+            **Database Operations:**
             "Create a table users with id integer and name varchar"
             → {"action": "create_table", "tableName": "users", "columns": [{"name": "id", "type": "INTEGER"}, {"name": "name", "type": "VARCHAR"}]}
             
