@@ -125,6 +125,7 @@ services:
       dockerfile: mcp-server/kafka-mcp-server/Dockerfile
     pull_policy: build
     container_name: kafka-mcp-server
+    image: agentic-marketplace/kafka-mcp-server:latest
     depends_on:
       kafka:
         condition: service_healthy
@@ -138,145 +139,12 @@ services:
     networks:
       - agentic-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/api/health"]
-      interval: 10s
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/health"]
+      interval: 15s
       timeout: 5s
       retries: 5
-
-  # Database MCP Server
-  database-mcp-server:
-    build:
-      context: .
-      dockerfile: mcp-server/database-mcp-server/Dockerfile
-    pull_policy: build
-    container_name: database-mcp-server
-    ports:
-      - "8083:8083"
-    networks:
-      - agentic-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8083/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MailHog - SMTP testing server with web UI
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
-    platform: linux/amd64
-    container_name: mailhog
-    ports:
-      - "1025:1025"  # SMTP port
-      - "8025:8025"  # Web UI port
-    networks:
-      - agentic-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8025"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Email MCP Server
-  email-mcp-server:
-    build:
-      context: .
-      dockerfile: mcp-server/email-mcp-server/Dockerfile
-    pull_policy: build
-    container_name: email-mcp-server
-    depends_on:
-      mailhog:
-        condition: service_healthy
-    ports:
-      - "8084:8084"
-    environment:
-      SPRING_MAIL_HOST: mailhog
-      SPRING_MAIL_PORT: 1025
-      EMAIL_FROM_ADDRESS: noreply@agentic-marketplace.local
-      EMAIL_FROM_NAME: Agentic Marketplace
-    networks:
-      - agentic-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8084/api/emails/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Topic Management Agent
-  topic-management-agent:
-    build:
-      context: .
-      dockerfile: agents/topic-management-agent/Dockerfile
-    pull_policy: build
-    container_name: topic-management-agent
-    depends_on:
-      kafka-mcp-server:
-        condition: service_healthy
-      email-mcp-server:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    environment:
-      # LLM Provider Configuration (Options: ollama, openai)
-      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120000}
-      
-      # Ollama Configuration (used when LLM_PROVIDER=ollama)
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
-      
-      # OpenAI Configuration (used when LLM_PROVIDER=openai)
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      
-      # MCP Configuration
-      MCP_KAFKA_URL: http://kafka-mcp-server:8081
-      MCP_EMAIL_URL: http://email-mcp-server:8084
-      MCP_TIMEOUT: 30000
-    networks:
-      - agentic-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/agent/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Database Management Agent
-  database-management-agent:
-    build:
-      context: .
-      dockerfile: agents/database-management-agent/Dockerfile
-    pull_policy: build
-    container_name: database-management-agent
-    depends_on:
-      database-mcp-server:
-        condition: service_healthy
-    ports:
-      - "8082:8082"
-    environment:
-      # LLM Provider Configuration (Options: ollama, openai)
-      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-120000}
-      
-      # Ollama Configuration (used when LLM_PROVIDER=ollama)
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
-      
-      # OpenAI Configuration (used when LLM_PROVIDER=openai)
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      
-      # MCP Configuration
-      MCP_DATABASE_URL: http://database-mcp-server:8083
-      MCP_TIMEOUT: 30000
-    networks:
-      - agentic-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/api/agent/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   # Web Application
   web-app:
@@ -286,9 +154,7 @@ services:
     pull_policy: build
     container_name: web-app
     depends_on:
-      topic-management-agent:
-        condition: service_healthy
-      database-management-agent:
+      kafka-mcp-server:
         condition: service_healthy
       agent-registry:
         condition: service_healthy
@@ -296,6 +162,8 @@ services:
       - "3000:3000"
     environment:
       VITE_AGENT_REGISTRY_URL: http://localhost:8090
+      VITE_KAFKA_MCP_URL: http://localhost:8081
+      VITE_OLLAMA_URL: http://host.docker.internal:11434
     networks:
       - agentic-network
 

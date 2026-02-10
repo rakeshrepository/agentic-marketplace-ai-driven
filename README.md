@@ -1,90 +1,177 @@
-# Agentic Marketplace AI-Driven
+# Agentic Marketplace AI-Driven - Kafka MCP Focus# Agentic Marketplace AI-Driven
 
-An MVP Agentic Marketplace with LLM-powered natural language processing, agent isolation, and a simple onboarding/config mechanism—all in a single compose file.
 
-![Architecture Diagram](docs/images/architecture-diagram.svg)
 
-## 📐 Layered Architecture
+A self-service marketplace with AI-powered Kafka management using the Model Context Protocol (MCP).An MVP Agentic Marketplace with LLM-powered natural language processing, agent isolation, and a simple onboarding/config mechanism—all in a single compose file.
 
-The system follows a modular, layered architecture with clear separation of concerns:
+
+
+## 🎯 Overview![Architecture Diagram](docs/images/architecture-diagram.svg)
+
+
+
+This project implements a **clean MCP architecture** where:## 📐 Layered Architecture
+
+- **Web App** = MCP Host (contains LLM - Ollama)
+
+- **Kafka MCP Server** = Pure tool executor (NO LLM, stateless)The system follows a modular, layered architecture with clear separation of concerns:
+
+- Users interact with Kafka through natural language in the web UI
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
+
+## 📐 Architecture┌─────────────────────────────────────────────────────────────────┐
+
 │                    PRESENTATION LAYER                            │
-│  ┌────────────────────────────────────────────────────────┐     │
-│  │  React Web App (Vite + TypeScript)                     │     │
-│  │  - AgentList, AgentCard, ChatInterface, SearchBar      │     │
-│  │  - agentService, agentRegistry                         │     │
-│  │  - Nginx Proxy (/agents/* routing)                     │     │
-│  └────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕ HTTP/REST
-┌─────────────────────────────────────────────────────────────────┐
-│                   ORCHESTRATION LAYER                            │
-│  ┌────────────────────────────────────────────────────────┐     │
-│  │  Agent Registry Service (Spring Boot)                  │     │
-│  │  - Agent CRUD operations                               │     │
-│  │  - Self-registration endpoint                          │     │
-│  │  - Agent metadata & capabilities management            │     │
-│  │  - Status management (active/pending/coming-soon)      │     │
-│  └────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕ HTTP/REST
-┌─────────────────────────────────────────────────────────────────┐
-│                     AGENT LAYER                                  │
-│  ┌──────────────────────────────┐  ┌──────────────────────────┐ │
-│  │ Topic Management Agent       │  │ Database Management Agent│ │
-│  │ (Spring Boot)                │  │ (Spring Boot)            │ │
-│  │ - AgentController            │  │ - AgentController        │ │
-│  │ - AgentOrchestrator          │  │ - AgentOrchestrator      │ │
-│  │ - OllamaService              │  │ - OllamaService          │ │
-│  │ - McpKafkaService            │  │ - McpDatabaseService     │ │
-│  └──────────────────────────────┘  └──────────────────────────┘ │
-│                                                                   │
-│  Self-registrable agents with:                                   │
-│  - Natural language processing (Ollama integration)              │
-│  - MCP client for tool execution                                 │
-│  - Null filtering & response formatting                          │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕ HTTP/REST
-┌─────────────────────────────────────────────────────────────────┐
-│                      AI/LLM LAYER                                │
-│  ┌────────────────────────────────────────────────────────┐     │
+
+```│  ┌────────────────────────────────────────────────────────┐     │
+
+┌───────────────────────────────────────────────────────────┐│  │  React Web App (Vite + TypeScript)                     │     │
+
+│                    WEB APPLICATION                        ││  │  - AgentList, AgentCard, ChatInterface, SearchBar      │     │
+
+│                     (MCP HOST)                            ││  │  - agentService, agentRegistry                         │     │
+
+│  ┌─────────────────────────────────────────────────────┐  ││  │  - Nginx Proxy (/agents/* routing)                     │     │
+
+│  │  React Frontend (Vite + TypeScript)                 │  ││  └────────────────────────────────────────────────────────┘     │
+
+│  │  - Chat Interface                                   │  │└─────────────────────────────────────────────────────────────────┘
+
+│  │  - Agent Registry UI                                │  │                              ↕ HTTP/REST
+
+│  │  - MCP Client Implementation                        │  │┌─────────────────────────────────────────────────────────────────┐
+
+│  └─────────────────────────────────────────────────────┘  ││                   ORCHESTRATION LAYER                            │
+
+│                         │                                  ││  ┌────────────────────────────────────────────────────────┐     │
+
+│  ┌─────────────────────────────────────────────────────┐  ││  │  Agent Registry Service (Spring Boot)                  │     │
+
+│  │  LLM Layer (Ollama)                                 │  ││  │  - Agent CRUD operations                               │     │
+
+│  │  - Natural language understanding                   │  ││  │  - Self-registration endpoint                          │     │
+
+│  │  - Tool discovery & selection                       │  ││  │  - Agent metadata & capabilities management            │     │
+
+│  │  - Response generation                              │  ││  │  - Status management (active/pending/coming-soon)      │     │
+
+│  └─────────────────────────────────────────────────────┘  ││  └────────────────────────────────────────────────────────┘     │
+
+└───────────────────────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────┘
+
+                          │                              ↕ HTTP/REST
+
+                          │ JSON-RPC 2.0 over SSE┌─────────────────────────────────────────────────────────────────┐
+
+                          │ (MCP Protocol)│                     AGENT LAYER                                  │
+
+                          ↓│  ┌──────────────────────────────┐  ┌──────────────────────────┐ │
+
+┌───────────────────────────────────────────────────────────┐│  │ Topic Management Agent       │  │ Database Management Agent│ │
+
+│              KAFKA MCP SERVER (Port 8081)                 ││  │ (Spring Boot)                │  │ (Spring Boot)            │ │
+
+│                    (NO LLM, STATELESS)                    ││  │ - AgentController            │  │ - AgentController        │ │
+
+│  ┌─────────────────────────────────────────────────────┐  ││  │ - AgentOrchestrator          │  │ - AgentOrchestrator      │ │
+
+│  │  6 MCP Tools:                                       │  ││  │ - OllamaService              │  │ - OllamaService          │ │
+
+│  │  - create_topic                                     │  ││  │ - McpKafkaService            │  │ - McpDatabaseService     │ │
+
+│  │  - list_topics                                      │  ││  └──────────────────────────────┘  └──────────────────────────┘ │
+
+│  │  - describe_topic                                   │  ││                                                                   │
+
+│  │  - delete_topic                                     │  ││  Self-registrable agents with:                                   │
+
+│  │  - topic_exists                                     │  ││  - Natural language processing (Ollama integration)              │
+
+│  │  - cluster_overview                                 │  ││  - MCP client for tool execution                                 │
+
+│  └─────────────────────────────────────────────────────┘  ││  - Null filtering & response formatting                          │
+
+└───────────────────────────────────────────────────────────┘└─────────────────────────────────────────────────────────────────┘
+
+                          │                              ↕ HTTP/REST
+
+                          ↓┌─────────────────────────────────────────────────────────────────┐
+
+                   [Kafka Cluster]│                      AI/LLM LAYER                                │
+
+```│  ┌────────────────────────────────────────────────────────┐     │
+
 │  │  Ollama Service (llama3.2)                             │     │
-│  │  - Intent parsing & understanding                      │     │
+
+## 🚀 Quick Start│  │  - Intent parsing & understanding                      │     │
+
 │  │  - Natural language to structured commands             │     │
-│  │  - Response generation & formatting                    │     │
-│  └────────────────────────────────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────┘
+
+```bash│  │  - Response generation & formatting                    │     │
+
+# 1. Start Ollama locally│  └────────────────────────────────────────────────────────┘     │
+
+ollama pull mistral└─────────────────────────────────────────────────────────────────┘
+
                               ↕ HTTP/REST
-┌─────────────────────────────────────────────────────────────────┐
-│                  TOOL/CAPABILITY LAYER (MCP)                     │
+
+# 2. Start all services┌─────────────────────────────────────────────────────────────────┐
+
+docker-compose up -d│                  TOOL/CAPABILITY LAYER (MCP)                     │
+
 │  ┌──────────────────────────────┐  ┌──────────────────────────┐ │
-│  │ Kafka MCP Server             │  │ Database MCP Server      │ │
-│  │ - Topic CRUD operations      │  │ - Query execution        │ │
-│  │ - KafkaAdminService          │  │ - Schema operations      │ │
+
+# 3. Access web UI│  │ Kafka MCP Server             │  │ Database MCP Server      │ │
+
+open http://localhost:3000│  │ - Topic CRUD operations      │  │ - Query execution        │ │
+
+```│  │ - KafkaAdminService          │  │ - Schema operations      │ │
+
 │  │ - Topic metadata retrieval   │  │ - Connection management  │ │
-│  └──────────────────────────────┘  └──────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              ↕ Native Protocols
-┌─────────────────────────────────────────────────────────────────┐
-│                   INFRASTRUCTURE LAYER                           │
-│  ┌──────────────────────────────┐  ┌──────────────────────────┐ │
-│  │ Apache Kafka + Zookeeper     │  │ PostgreSQL / MySQL       │ │
-│  │ - Message broker             │  │ - Data storage           │ │
-│  │ - Event streaming            │  │ - Relational data        │ │
-│  └──────────────────────────────┘  └──────────────────────────┘ │
+
+## 📦 Services│  └──────────────────────────────┘  └──────────────────────────┘ │
+
 └─────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────┐
-│                      SHARED LAYER                                │
-│  ┌────────────────────────────────────────────────────────┐     │
-│  │  Agent SDK (Common Library)                            │     │
-│  │  - AgentMetadata, AgentRegistry models                 │     │
+| Service | Port | Description |                              ↕ Native Protocols
+
+|---------|------|-------------|┌─────────────────────────────────────────────────────────────────┐
+
+| Web UI | 3000 | Main application |│                   INFRASTRUCTURE LAYER                           │
+
+| Agent Registry | 8090 | Agent metadata API |│  ┌──────────────────────────────┐  ┌──────────────────────────┐ │
+
+| Kafka MCP Server | 8081 | MCP tools for Kafka |│  │ Apache Kafka + Zookeeper     │  │ PostgreSQL / MySQL       │ │
+
+| Kafka UI | 8088 | Kafka management |│  │ - Message broker             │  │ - Data storage           │ │
+
+| Kafka Broker | 9092 | Kafka cluster |│  │ - Event streaming            │  │ - Relational data        │ │
+
+│  └──────────────────────────────┘  └──────────────────────────┘ │
+
+## 🎯 Key Features└─────────────────────────────────────────────────────────────────┘
+
+
+
+- ✅ **Clean MCP Architecture**: LLM in client, tools in server┌─────────────────────────────────────────────────────────────────┐
+
+- ✅ **6 Kafka Tools**: Full topic management via natural language│                      SHARED LAYER                                │
+
+- ✅ **Ollama Integration**: Local LLM, no external API costs│  ┌────────────────────────────────────────────────────────┐     │
+
+- ✅ **Self-Service UI**: Agent registration and chat interface│  │  Agent SDK (Common Library)                            │     │
+
+- ✅ **Docker Ready**: One command to run everything│  │  - AgentMetadata, AgentRegistry models                 │     │
+
 │  │  - AgentRequest, AgentResponse DTOs                    │     │
-│  │  - AgentRegistryLoader (agent-list.json)               │     │
+
+## 📚 Documentation│  │  - AgentRegistryLoader (agent-list.json)               │     │
+
 │  │  - CategoryMetadata                                    │     │
-│  └────────────────────────────────────────────────────────┘     │
+
+See [MCP Official Docs](https://modelcontextprotocol.io) for protocol details.│  └────────────────────────────────────────────────────────┘     │
+
 └─────────────────────────────────────────────────────────────────┘
 ```
 

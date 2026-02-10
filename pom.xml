@@ -18,16 +18,12 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>3.2.2</spring-boot.version>
+        <spring-ai.version>1.1.0</spring-ai.version>
         <kafka.version>3.6.1</kafka.version>
     </properties>
 
     <modules>
-        <module>common/agent-sdk</module>
         <module>mcp-server/kafka-mcp-server</module>
-        <module>mcp-server/database-mcp-server</module>
-        <module>mcp-server/email-mcp-server</module>
-        <module>agents/topic-management-agent</module>
-        <module>agents/database-management-agent</module>
         <module>agent-registry-service</module>
     </modules>
 
@@ -41,9 +37,11 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>com.agentic.marketplace</groupId>
-                <artifactId>agent-sdk</artifactId>
-                <version>${project.version}</version>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.apache.kafka</groupId>

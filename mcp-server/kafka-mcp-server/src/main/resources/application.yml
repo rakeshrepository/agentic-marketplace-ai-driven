@@ -7,6 +7,29 @@ spring:
   application:
     name: kafka-mcp-server
 
+# MCP Configuration
+mcp:
+  server:
+    enabled: true
+    transport: sse  # Server-Sent Events for remote access (also supports: stdio for local)
+    name: kafka-mcp-server
+    version: 1.0.0
+    description: "Model Context Protocol server for Apache Kafka operations"
+    sse:
+      endpoint: /mcp/sse
+      cors:
+        enabled: true
+        allowed-origins: "*"  # Configure appropriately for production
+        allowed-methods: GET, POST, OPTIONS
+        allowed-headers: "*"
+    
+    # Server capabilities
+    capabilities:
+      tools: true
+      resources: true
+      prompts: true
+      logging: true
+
 # Kafka Configuration (config-driven)
 kafka:
   bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -20,3 +43,5 @@ logging:
   level:
     com.agentic.marketplace: DEBUG
     org.apache.kafka: WARN
+    io.modelcontextprotocol: DEBUG
+
