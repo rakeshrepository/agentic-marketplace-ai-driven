@@ -234,7 +234,9 @@ export class McpService {
   ): Promise<ToolCallResult> {
     await this.initialize();
 
-    const client = this.clients.get(serverName);
+    // Make server name lookup case-insensitive
+    const serverNameLower = serverName.toLowerCase();
+    const client = this.clients.get(serverNameLower);
     if (!client) {
       return {
         content: [{ type: 'text', text: `Unknown MCP server: ${serverName}` }],
@@ -251,7 +253,9 @@ export class McpService {
   async getServerTools(serverName: string): Promise<McpTool[]> {
     await this.initialize();
 
-    const client = this.clients.get(serverName);
+    // Make server name lookup case-insensitive
+    const serverNameLower = serverName.toLowerCase();
+    const client = this.clients.get(serverNameLower);
     if (!client) {
       return [];
     }

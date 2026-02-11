@@ -2,6 +2,7 @@ package com.agentic.marketplace.mcp;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.common.config.ConfigResource;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -83,6 +84,38 @@ public class KafkaAdminService {
         overview.put("topicCount", adminClient.listTopics().names().get().size());
         
         return overview;
+    }
+
+    public Map<String, Object> updateTopic(String topicName, Integer newPartitions, Map<String, String> configs)
+            throws ExecutionException, InterruptedException {
+        Map<String, Object> response = new HashMap<>();
+        response.put("topic", topicName);
+        
+        // Update partitions if specified
+        if (newPartitions != null && newPartitions > 0) {
+            Map<String, NewPartitions> partitionsMap = new HashMap<>();
+            partitionsMap.put(topicName, NewPartitions.increaseTo(newPartitions));
+            adminClient.createPartitions(partitionsMap).all().get();
+            response.put("partitions_updated", newPartitions);
+        }
+        
+        // Update configurations if specified
+        if (configs != null && !configs.isEmpty()) {
+            ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topicName);
+            Collection<AlterConfigOp> ops = configs.entrySet().stream()
+                .map(e -> new AlterConfigOp(
+                    new ConfigEntry(e.getKey(), e.getValue()),
+                    AlterConfigOp.OpType.SET
+                ))
+                .collect(Collectors.toList());
+            
+            Map<ConfigResource, Collection<AlterConfigOp>> alterConfigs = new HashMap<>();
+            alterConfigs.put(resource, ops);
+            adminClient.incrementalAlterConfigs(alterConfigs).all().get();
+            response.put("configs_updated", configs);
+        }
+        
+        return response;
     }
 
     public void close() {

@@ -41,7 +41,7 @@ class AIService {
   constructor() {
     // Use relative proxy URL so it works from browser
     this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || '/ollama';
-    this.model = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2';
+    this.model = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:latest';
   }
 
   /**

@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -132,6 +133,20 @@ public class SimpleHttpMcpServer {
                                         "type": "object",
                                         "properties": {
                                             "topic_name": {"type": "string", "description": "Topic name"}
+                                        },
+                                        "required": ["topic_name"]
+                                    }
+                                },
+                                {
+                                    "name": "update_topic",
+                                    "description": "Update a Kafka topic (partitions or configuration)",
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "topic_name": {"type": "string", "description": "Topic name"},
+                                            "partitions": {"type": "integer", "description": "New partition count (can only increase)"},
+                                            "retention_ms": {"type": "string", "description": "Retention time in milliseconds"},
+                                            "compression_type": {"type": "string", "description": "Compression type (gzip, snappy, lz4, zstd)"}
                                         },
                                         "required": ["topic_name"]
                                     }
@@ -285,6 +300,41 @@ public class SimpleHttpMcpServer {
                             }
                         }
                         """, topicName);
+                }
+                case "update_topic" -> {
+                    String topicName = extractNestedField(requestBody, "arguments", "topic_name");
+                    int partitionsValue = extractIntField(requestBody, "partitions", -1);
+                    Integer newPartitions = partitionsValue > 0 ? partitionsValue : null;
+                    
+                    // Parse configs if provided (they're nested in the arguments object)
+                    Map<String, String> configs = new HashMap<>();
+                    // For now, we'll extract specific known configs
+                    String retentionMs = extractNestedField(requestBody, "arguments", "retention_ms");
+                    if (!retentionMs.isEmpty()) {
+                        configs.put("retention.ms", retentionMs);
+                    }
+                    String compressionType = extractNestedField(requestBody, "arguments", "compression_type");
+                    if (!compressionType.isEmpty()) {
+                        configs.put("compression.type", compressionType);
+                    }
+                    
+                    Map<String, String> configsToPass = configs.isEmpty() ? null : configs;
+                    Map<String, Object> result = kafkaAdmin.updateTopic(topicName, newPartitions, configsToPass);
+                    
+                    yield String.format("""
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "result": {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "✓ Topic '%s' updated successfully: %s"
+                                    }
+                                ]
+                            }
+                        }
+                        """, topicName, formatMap(result));
                 }
                 case "topic_exists" -> {
                     String topicName = extractNestedField(requestBody, "arguments", "topic_name");
