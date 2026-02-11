@@ -7,10 +7,8 @@ COPY mvnw .
 COPY .mvn ./.mvn
 COPY pom.xml .
 
-# Copy all modules
-COPY common ./common
+# Copy only the modules that exist in the project
 COPY mcp-server ./mcp-server
-COPY agents ./agents
 COPY agent-registry-service ./agent-registry-service
 
 # Build the application

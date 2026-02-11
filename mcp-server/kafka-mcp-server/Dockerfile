@@ -7,17 +7,15 @@ COPY mvnw .
 COPY .mvn .mvn
 COPY pom.xml .
 
-# Copy full module directories so Maven can resolve the multi-module project during Docker build
-COPY common ./common
+# Copy only the modules that exist in the project
 COPY mcp-server ./mcp-server
-COPY agents ./agents
 COPY agent-registry-service ./agent-registry-service
 
 # Build only the kafka-mcp-server module but allow dependent modules to be built (-am)
 RUN chmod +x mvnw && ./mvnw clean package -DskipTests -pl mcp-server/kafka-mcp-server -am
 
 # Runtime stage
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 # Add metadata labels for container management
@@ -28,15 +26,12 @@ LABEL org.opencontainers.image.version="1.0.0"
 LABEL com.agentic.marketplace.service="kafka-mcp-server"
 LABEL com.agentic.marketplace.type="mcp-server"
 
-# Install wget for healthcheck (alpine doesn't have it by default)
-RUN apk add --no-cache wget
-
 # Create non-root user for security
-RUN addgroup -g 1001 appuser && \
-    adduser -D -u 1001 -G appuser appuser
+RUN groupadd -g 1001 appuser && \
+    useradd -r -u 1001 -g appuser appuser
 
-# Copy the fat JAR from build stage
-COPY --from=build /app/mcp-server/kafka-mcp-server/target/*.jar app.jar
+# Copy the fat JAR from build stage (shaded JAR is the final output after replacement)
+COPY --from=build /app/mcp-server/kafka-mcp-server/target/kafka-mcp-server-*.jar app.jar
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app

@@ -27,16 +27,28 @@ public class KafkaMcpServerApplication {
         
         KafkaAdminService kafkaAdmin = new KafkaAdminService(bootstrapServers);
         
-        // Start health check HTTP server
-        HttpServer healthServer = startHealthCheckServer(kafkaAdmin);
+        // Start simple HTTP MCP server with JSON-RPC 2.0
+        SimpleHttpMcpServer mcpServer;
+        try {
+            mcpServer = new SimpleHttpMcpServer(8081, kafkaAdmin);
+            mcpServer.start();
+        } catch (IOException e) {
+            log.error("Failed to start MCP server", e);
+            kafkaAdmin.close();
+            System.exit(1);
+            return;
+        }
         
+        /* Original SSE-based server (requires servlet container)
         HttpServletSseServerTransportProvider transport = HttpServletSseServerTransportProvider.builder()
             .messageEndpoint("/mcp/message")
             .sseEndpoint("/sse")
             .build();
+        */
         
         try {
-            McpAsyncServer mcpServer = McpServer.async(transport)
+            /* SSE-based server code commented out
+            McpAsyncServer mcpAsyncServer = McpServer.async(transport)
                 .serverInfo("kafka-mcp-server", "1.0.0")
                 .instructions("Kafka MCP Server for topic management")
                 .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
@@ -179,17 +191,19 @@ public class KafkaMcpServerApplication {
                 )
                 
                 .build();
+            */
             
             log.info("✓ MCP Server started successfully");
             log.info("✓ 6 tools registered: create_topic, list_topics, describe_topic, delete_topic, topic_exists, cluster_overview");
             log.info("✓ Bootstrap Servers: {}", bootstrapServers);
+            log.info("✓ HTTP endpoint: http://localhost:8081/mcp/message");
             log.info("✓ Health check endpoint: http://localhost:8081/health");
             log.info("✓ Ready for LLM connections");
             
             // Add shutdown hook for graceful cleanup
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 log.info("Shutting down Kafka MCP Server...");
-                healthServer.stop(5);
+                mcpServer.stop();
                 kafkaAdmin.close();
                 log.info("Shutdown complete");
             }));
@@ -197,8 +211,8 @@ public class KafkaMcpServerApplication {
             Thread.currentThread().join();
         } catch (Exception e) {
             log.error("Failed to start", e);
+            mcpServer.stop();
             kafkaAdmin.close();
-            healthServer.stop(0);
             System.exit(1);
         }
     }

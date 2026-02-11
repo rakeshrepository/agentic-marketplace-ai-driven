@@ -21,17 +21,19 @@ public class Agent {
     @Column(name = "category_id")
     private String categoryId;
     
-    @Column(length = 20)
+    @Column(length = 50)
     private String status;
     
-    @Column(name = "endpoint_url")
+    @Column(name = "endpoint_url", length = 500)
     private String endpointUrl;
     
     @Column(name = "health_check_path")
     private String healthCheckPath;
     
+    @Column(length = 50)
     private String icon;
     
+    @Column(length = 50)
     private String color;
     
     @Column(name = "created_at")

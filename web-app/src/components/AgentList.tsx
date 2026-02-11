@@ -5,7 +5,6 @@ import { AgentCard } from './AgentCard';
 interface AgentListProps {
   agents: Agent[];
   categories: Category[];
-  selectedAgent: Agent | null;
   onSelectAgent: (agent: Agent) => void;
   searchQuery: string;
   onDeleteAgent?: (agentId: string) => void;
@@ -27,7 +26,6 @@ const categoryIconMap: Record<string, string> = {
 export const AgentList: React.FC<AgentListProps> = ({
   agents,
   categories,
-  selectedAgent,
   onSelectAgent,
   searchQuery,
   onDeleteAgent,
@@ -86,7 +84,7 @@ export const AgentList: React.FC<AgentListProps> = ({
                   key={agent.id}
                   agent={agent}
                   onSelect={onSelectAgent}
-                  isSelected={selectedAgent?.id === agent.id}
+                  isSelected={false}
                   onDelete={agent.status !== 'coming-soon' ? onDeleteAgent : undefined}
                 />
               ))}

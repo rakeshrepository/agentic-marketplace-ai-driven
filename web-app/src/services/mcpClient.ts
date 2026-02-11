@@ -169,13 +169,13 @@ export class McpService {
     const servers: McpServerConfig[] = [
       {
         name: 'kafka',
-        url: import.meta.env.VITE_KAFKA_MCP_URL || 'http://localhost:8081',
+        url: import.meta.env.VITE_KAFKA_MCP_URL || '/mcp/kafka',
         description: 'Kafka MCP Server for topic management',
       },
       // Add more MCP servers here as needed
       // {
       //   name: 'database',
-      //   url: import.meta.env.VITE_DATABASE_MCP_URL || 'http://localhost:8083',
+      //   url: import.meta.env.VITE_DATABASE_MCP_URL || '/mcp/database',
       //   description: 'Database MCP Server',
       // },
     ];

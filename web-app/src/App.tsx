@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { Agent, Category } from './types';
 import { getAllAgents, getAllCategories, deleteAgent } from './services/agentService';
 import { AgentList } from './components/AgentList';
-import { ChatInterface } from './components/ChatInterface';
+import { McpChatInterface } from './components/McpChatInterface';
 import { SearchBar } from './components/SearchBar';
 import { CategoryTabs } from './components/CategoryTabs';
 import AgentOnboarding from './components/AgentOnboarding';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'onboard'>('home');
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [currentPage, setCurrentPage] = useState<'home' | 'onboard' | 'mcp-chat'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -36,6 +35,17 @@ function App() {
     }
   };
 
+  // Handler for when user clicks on an agent card
+  const handleSelectAgent = (agent: Agent) => {
+    // For MCP-enabled agents (endpoint starts with 'mcp://'), go to MCP Chat
+    if (agent.endpoint?.startsWith('mcp://')) {
+      setCurrentPage('mcp-chat');
+    } else {
+      // For legacy agents, show a message to use MCP Chat instead
+      alert('This agent uses legacy architecture. Please use the "⚡ MCP Kafka Chat" button for MCP-enabled agents.');
+    }
+  };
+
   const handleDeleteAgent = async (agentId: string) => {
     if (!confirm('Are you sure you want to delete this agent? This action cannot be undone.')) {
       return;
@@ -46,10 +56,6 @@ function App() {
       if (result.success) {
         // Remove from local state
         setAgents(prevAgents => prevAgents.filter(agent => agent.id !== agentId));
-        // If the deleted agent was selected, clear selection
-        if (selectedAgent?.id === agentId) {
-          setSelectedAgent(null);
-        }
         alert('Agent deleted successfully!');
       } else {
         alert(`Failed to delete agent: ${result.message}`);
@@ -78,6 +84,49 @@ function App() {
   // Render onboarding page
   if (currentPage === 'onboard') {
     return <AgentOnboarding />;
+  }
+
+  // Render MCP Chat page
+  if (currentPage === 'mcp-chat') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950">
+        <header className="relative backdrop-blur-sm bg-slate-900/50 border-b border-purple-500/20 shadow-2xl shadow-purple-900/20">
+          <div className="max-w-7xl mx-auto px-6 py-6">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentPage('home')}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+              >
+                <span>←</span>
+                <span>Back to Home</span>
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-xl blur opacity-75 animate-pulse"></div>
+                  <div className="relative bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 p-3 rounded-xl shadow-xl">
+                    <span className="text-3xl">⚡</span>
+                  </div>
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-2xl">
+                    Kafka MCP Chat
+                  </h1>
+                  <p className="text-sm text-slate-300/80 mt-1 font-light">
+                    💬 AI-powered Kafka management via natural language
+                  </p>
+                </div>
+              </div>
+              <div className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-sm font-medium shadow-md shadow-emerald-500/20">
+                🟢 MCP Active
+              </div>
+            </div>
+          </div>
+        </header>
+        <main className="relative max-w-7xl mx-auto px-6 py-6">
+          <McpChatInterface />
+        </main>
+      </div>
+    );
   }
 
   // Render home page
@@ -112,6 +161,13 @@ function App() {
             </div>
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setCurrentPage('mcp-chat')}
+                className="px-4 py-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-700 hover:via-teal-700 hover:to-cyan-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg shadow-emerald-500/40 hover:shadow-xl hover:shadow-emerald-500/60 flex items-center gap-2"
+              >
+                <span>⚡</span>
+                <span>MCP Kafka Chat</span>
+              </button>
+              <button
                 onClick={() => setCurrentPage('onboard')}
                 className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition-all duration-200 shadow-lg shadow-purple-500/40 hover:shadow-xl hover:shadow-purple-500/60 flex items-center gap-2"
               >
@@ -136,36 +192,27 @@ function App() {
 
       {/* Main Content */}
       <main className="relative max-w-7xl mx-auto px-6 py-6">
-        {!selectedAgent ? (
-          <>
-            <div className="mb-8">
-              <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        <div className="mb-8">
+          <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <div className="inline-block p-4 rounded-2xl bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 mb-4 animate-pulse shadow-xl shadow-purple-500/30 border border-purple-400/40">
+                <div className="text-5xl">🤖</div>
+              </div>
+              <div className="text-purple-300 font-medium">Loading MCP agents...</div>
             </div>
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="text-center">
-                  <div className="inline-block p-4 rounded-2xl bg-gradient-to-br from-indigo-600/30 via-purple-600/30 to-pink-600/30 mb-4 animate-pulse shadow-xl shadow-purple-500/30 border border-purple-400/40">
-                    <div className="text-5xl">🤖</div>
-                  </div>
-                  <div className="text-purple-300 font-medium">Loading agents...</div>
-                </div>
-              </div>
-            ) : (
-              <div className="overflow-y-auto custom-scrollbar">
-                <AgentList
-                  agents={filteredAgents}
-                  categories={categories}
-                  selectedAgent={selectedAgent}
-                  onSelectAgent={setSelectedAgent}
-                  searchQuery={searchQuery}
-                  onDeleteAgent={handleDeleteAgent}
-                />
-              </div>
-            )}
-          </>
+          </div>
         ) : (
-          <div className="min-h-[calc(100vh-200px)]">
-            <ChatInterface agent={selectedAgent} onBack={() => setSelectedAgent(null)} />
+          <div className="overflow-y-auto custom-scrollbar">
+            <AgentList
+              agents={filteredAgents}
+              categories={categories}
+              onSelectAgent={handleSelectAgent}
+              searchQuery={searchQuery}
+              onDeleteAgent={handleDeleteAgent}
+            />
           </div>
         )}
       </main>
