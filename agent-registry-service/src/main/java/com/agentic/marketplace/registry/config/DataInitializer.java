@@ -24,6 +24,7 @@ public class DataInitializer implements CommandLineRunner {
     
     private final CategoryRepository categoryRepository;
     private final AgentRepository agentRepository;
+    private final RegistryConfigProperties configProperties;
 
     @Override
     @Transactional
@@ -36,12 +37,15 @@ public class DataInitializer implements CommandLineRunner {
         
         log.info("Found {} categories and {} agents in database", categoryCount, agentCount);
         
-        if (categoryCount >= 9 && agentCount >= 27) {
+        int minCategories = configProperties.getDataInit().getMinCategories();
+        int minAgents = configProperties.getDataInit().getMinAgents();
+        
+        if (categoryCount >= minCategories && agentCount >= minAgents) {
             log.info("Database already initialized with all data. Skipping seed data.");
             return;
         }
         
-        if (categoryCount > 0 || agentCount > 0) {
+        if ((categoryCount > 0 || agentCount > 0) && configProperties.getDataInit().isReinitializeOnPartialData()) {
             log.warn("Database has partial data. Clearing and reinitializing...");
             agentRepository.deleteAll();
             categoryRepository.deleteAll();
@@ -50,7 +54,8 @@ public class DataInitializer implements CommandLineRunner {
         initializeCategories();
         initializeAgents();
         
-        log.info("Database initialization completed successfully! Added {} categories and 27 agents", categoryRepository.count());
+        log.info("Database initialization completed successfully! Added {} categories and {} agents", 
+            categoryRepository.count(), agentRepository.count());
     }
 
     private void initializeCategories() {
@@ -126,18 +131,7 @@ public class DataInitializer implements CommandLineRunner {
     }
     
     private String getColorForCategory(String category) {
-        return switch (category) {
-            case "infrastructure" -> "#FF6B6B";
-            case "devops" -> "#326CE5";
-            case "developer-tools" -> "#F7DF1E";
-            case "cicd-automation" -> "#2088FF";
-            case "data-analytics" -> "#9B59B6";
-            case "security-monitoring" -> "#E74C3C";
-            case "ai-intelligent" -> "#3498DB";
-            case "integration-hub" -> "#1ABC9C";
-            case "custom-solutions" -> "#95A5A6";
-            default -> "#4ECDC4";
-        };
+        return configProperties.getCategoryColor(category);
     }
     
     private void initializeAgentsHardcoded() {

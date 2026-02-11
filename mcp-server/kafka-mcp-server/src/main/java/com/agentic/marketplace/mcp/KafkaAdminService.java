@@ -15,14 +15,16 @@ import java.util.stream.Collectors;
 public class KafkaAdminService {
 
     private final AdminClient adminClient;
+    private final int requestTimeoutMs;
 
-    public KafkaAdminService(String bootstrapServers) {
+    public KafkaAdminService(String bootstrapServers, int requestTimeoutMs) {
+        this.requestTimeoutMs = requestTimeoutMs;
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(requestTimeoutMs));
         
         this.adminClient = AdminClient.create(props);
-        log.info("Kafka AdminClient initialized: {}", bootstrapServers);
+        log.info("Kafka AdminClient initialized: {} (timeout: {}ms)", bootstrapServers, requestTimeoutMs);
     }
 
     public Map<String, Object> createTopic(String topicName, int partitions, short replicationFactor) 

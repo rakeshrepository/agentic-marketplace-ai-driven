@@ -7,6 +7,9 @@ interface ImportMetaEnv {
   readonly VITE_DATABASE_MCP_URL: string;
   readonly VITE_OLLAMA_URL: string;
   readonly VITE_OLLAMA_MODEL: string;
+  readonly VITE_OLLAMA_TEMPERATURE: string;
+  readonly VITE_OLLAMA_NUM_PREDICT: string;
+  readonly VITE_MCP_REQUEST_ID_START: string;
 }
 
 interface ImportMeta {

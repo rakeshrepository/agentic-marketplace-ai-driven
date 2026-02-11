@@ -36,12 +36,16 @@ export interface ChatResponse {
 class AIService {
   private ollamaUrl: string;
   private model: string;
+  private temperature: number;
+  private numPredict: number;
   private conversationHistory: Map<string, ChatMessage[]> = new Map();
 
   constructor() {
     // Use relative proxy URL so it works from browser
     this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || '/ollama';
     this.model = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2:latest';
+    this.temperature = parseFloat(import.meta.env.VITE_OLLAMA_TEMPERATURE) || 0.7;
+    this.numPredict = parseInt(import.meta.env.VITE_OLLAMA_NUM_PREDICT) || 500;
   }
 
   /**
@@ -85,8 +89,8 @@ If no tool is needed, respond normally.`;
           prompt: `${systemPrompt}\n\nUser: ${userMessage}\n\nAssistant:`,
           stream: false,
           options: {
-            temperature: 0.7,
-            num_predict: 500,
+            temperature: this.temperature,
+            num_predict: this.numPredict,
           },
         }),
       });

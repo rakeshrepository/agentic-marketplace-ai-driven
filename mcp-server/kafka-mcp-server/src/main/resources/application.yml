@@ -34,9 +34,28 @@ mcp:
 kafka:
   bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
   admin:
-    request-timeout-ms: ${KAFKA_ADMIN_TIMEOUT:30000}
+    request-timeout-ms: ${KAFKA_ADMIN_TIMEOUT:10000}
     default-partitions: ${KAFKA_DEFAULT_PARTITIONS:1}
-    default-replication-factor: ${KAFKA_DEFAULT_REPLICATION:3}
+    default-replication-factor: ${KAFKA_DEFAULT_REPLICATION:1}
+
+# HTTP Server Configuration
+http:
+  server:
+    port: ${HTTP_SERVER_PORT:8081}
+    shutdown-timeout-seconds: ${HTTP_SERVER_SHUTDOWN_TIMEOUT:5}
+    backlog: ${HTTP_SERVER_BACKLOG:0}
+  cors:
+    enabled: ${HTTP_CORS_ENABLED:true}
+    allowed-origins: ${HTTP_CORS_ALLOWED_ORIGINS:*}
+    allowed-methods: ${HTTP_CORS_ALLOWED_METHODS:POST, OPTIONS}
+    allowed-headers: ${HTTP_CORS_ALLOWED_HEADERS:Content-Type}
+  response:
+    default-content-type: ${HTTP_RESPONSE_CONTENT_TYPE:application/json}
+    status-codes:
+      success: ${HTTP_STATUS_SUCCESS:200}
+      no-content: ${HTTP_STATUS_NO_CONTENT:204}
+      method-not-allowed: ${HTTP_STATUS_METHOD_NOT_ALLOWED:405}
+      internal-error: ${HTTP_STATUS_INTERNAL_ERROR:500}
 
 # Logging
 logging:

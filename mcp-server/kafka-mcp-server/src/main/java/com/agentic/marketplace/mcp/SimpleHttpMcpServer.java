@@ -21,10 +21,12 @@ public class SimpleHttpMcpServer {
     private static final Logger log = LoggerFactory.getLogger(SimpleHttpMcpServer.class);
     private final KafkaAdminService kafkaAdmin;
     private final HttpServer server;
+    private final HttpServerConfig config;
 
-    public SimpleHttpMcpServer(int port, KafkaAdminService kafkaAdmin) throws IOException {
+    public SimpleHttpMcpServer(HttpServerConfig config, KafkaAdminService kafkaAdmin) throws IOException {
+        this.config = config;
         this.kafkaAdmin = kafkaAdmin;
-        this.server = HttpServer.create(new InetSocketAddress(port), 0);
+        this.server = HttpServer.create(new InetSocketAddress(config.getPort()), config.getBacklog());
         
         // MCP Message endpoint
         server.createContext("/mcp/message", this::handleMcpMessage);
@@ -42,23 +44,25 @@ public class SimpleHttpMcpServer {
     }
 
     public void stop() {
-        server.stop(5);
+        server.stop(config.getShutdownTimeoutSeconds());
         log.info("MCP HTTP Server stopped");
     }
 
     private void handleMcpMessage(HttpExchange exchange) throws IOException {
         // Add CORS headers
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "POST, OPTIONS");
-        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+        if (config.isCorsEnabled()) {
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", config.getCorsAllowedOrigins());
+            exchange.getResponseHeaders().add("Access-Control-Allow-Methods", config.getCorsAllowedMethods());
+            exchange.getResponseHeaders().add("Access-Control-Allow-Headers", config.getCorsAllowedHeaders());
+        }
 
         if ("OPTIONS".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(204, -1);
+            exchange.sendResponseHeaders(config.getStatusNoContent(), -1);
             return;
         }
 
         if (!"POST".equals(exchange.getRequestMethod())) {
-            sendError(exchange, 405, "Method not allowed");
+            sendError(exchange, config.getStatusMethodNotAllowed(), "Method not allowed");
             return;
         }
 
@@ -72,15 +76,15 @@ public class SimpleHttpMcpServer {
             log.debug("MCP Response: {}", response);
 
             // Send response
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().set("Content-Type", config.getDefaultContentType());
             byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, responseBytes.length);
+            exchange.sendResponseHeaders(config.getStatusSuccess(), responseBytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(responseBytes);
             }
         } catch (Exception e) {
             log.error("Error processing MCP request", e);
-            sendError(exchange, 500, "Internal server error: " + e.getMessage());
+            sendError(exchange, config.getStatusInternalError(), "Internal server error: " + e.getMessage());
         }
     }
 
@@ -398,8 +402,10 @@ public class SimpleHttpMcpServer {
     }
 
     private void handleHealth(HttpExchange exchange) throws IOException {
-        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        if (config.isCorsEnabled()) {
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", config.getCorsAllowedOrigins());
+        }
+        exchange.getResponseHeaders().set("Content-Type", config.getDefaultContentType());
         
         String response = """
             {
@@ -413,7 +419,7 @@ public class SimpleHttpMcpServer {
             """.formatted(System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
         
         byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(200, responseBytes.length);
+        exchange.sendResponseHeaders(config.getStatusSuccess(), responseBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(responseBytes);
         }
@@ -431,7 +437,7 @@ public class SimpleHttpMcpServer {
             }
             """.formatted(statusCode, message);
         
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Content-Type", config.getDefaultContentType());
         byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(statusCode, responseBytes.length);
         try (OutputStream os = exchange.getResponseBody()) {

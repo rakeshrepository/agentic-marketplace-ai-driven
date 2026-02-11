@@ -32,11 +32,12 @@ export interface ToolCallResult {
 class McpClient {
   private serverUrl: string;
   private serverName: string;
-  private requestId: number = 1;
+  private requestId: number;
 
   constructor(serverUrl: string, serverName: string) {
     this.serverUrl = serverUrl;
     this.serverName = serverName;
+    this.requestId = parseInt(import.meta.env.VITE_MCP_REQUEST_ID_START) || 1;
   }
 
   /**

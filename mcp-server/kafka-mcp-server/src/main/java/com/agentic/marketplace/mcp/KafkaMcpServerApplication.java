@@ -18,19 +18,22 @@ import java.util.Map;
 
 public class KafkaMcpServerApplication {
     private static final Logger log = LoggerFactory.getLogger(KafkaMcpServerApplication.class);
-    private static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
     private static final McpJsonMapper JSON_MAPPER = McpJsonMapper.getDefault();
 
     public static void main(String[] args) {
         log.info("=== Starting Kafka MCP Server ===");
-        String bootstrapServers = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS);
         
-        KafkaAdminService kafkaAdmin = new KafkaAdminService(bootstrapServers);
+        // Load configuration from environment
+        String bootstrapServers = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
+        int requestTimeout = getEnvAsInt("KAFKA_ADMIN_TIMEOUT", 10000);
+        
+        KafkaAdminService kafkaAdmin = new KafkaAdminService(bootstrapServers, requestTimeout);
         
         // Start simple HTTP MCP server with JSON-RPC 2.0
         SimpleHttpMcpServer mcpServer;
         try {
-            mcpServer = new SimpleHttpMcpServer(8081, kafkaAdmin);
+            HttpServerConfig httpConfig = new HttpServerConfig();
+            mcpServer = new SimpleHttpMcpServer(httpConfig, kafkaAdmin);
             mcpServer.start();
         } catch (IOException e) {
             log.error("Failed to start MCP server", e);
@@ -239,7 +242,7 @@ public class KafkaMcpServerApplication {
                                 "connected": true
                             }
                         }
-                        """.formatted(System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS));
+                        """.formatted(System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"));
                     
                     exchange.getResponseHeaders().set("Content-Type", "application/json");
                     exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
@@ -279,5 +282,16 @@ public class KafkaMcpServerApplication {
         StringBuilder sb = new StringBuilder();
         map.forEach((key, value) -> sb.append("  ").append(key).append(": ").append(value).append("\n"));
         return sb.toString();
+    }
+    
+    private static int getEnvAsInt(String key, int defaultValue) {
+        String value = System.getenv(key);
+        if (value == null) return defaultValue;
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            log.warn("Invalid integer value for {}: {}. Using default: {}", key, value, defaultValue);
+            return defaultValue;
+        }
     }
 }
