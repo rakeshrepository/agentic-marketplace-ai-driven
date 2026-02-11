@@ -39,8 +39,9 @@ class AIService {
   private conversationHistory: Map<string, ChatMessage[]> = new Map();
 
   constructor() {
-    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || 'http://localhost:11434';
-    this.model = import.meta.env.VITE_OLLAMA_MODEL || 'llama3';
+    // Use relative proxy URL so it works from browser
+    this.ollamaUrl = import.meta.env.VITE_OLLAMA_URL || '/ollama';
+    this.model = import.meta.env.VITE_OLLAMA_MODEL || 'llama3.2';
   }
 
   /**
@@ -74,6 +75,8 @@ REASONING: <why you chose this tool>
 If no tool is needed, respond normally.`;
 
     try {
+      console.log(`[AI Service] Calling Ollama at: ${this.ollamaUrl}/api/generate with model: ${this.model}`);
+      
       const response = await fetch(`${this.ollamaUrl}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,7 +91,12 @@ If no tool is needed, respond normally.`;
         }),
       });
 
+      if (!response.ok) {
+        throw new Error(`Ollama returned status ${response.status}: ${response.statusText}`);
+      }
+
       const data = await response.json();
+      console.log('[AI Service] Ollama response received:', data);
       const llmResponse = data.response;
 
       // Parse LLM response for tool calls
