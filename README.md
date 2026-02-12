@@ -303,6 +303,46 @@ OLLAMA_MODEL=mistral ./start.sh start
    - "Describe topic orders"
    - "Delete topic orders"
 
+## 🔌 VS Code Integration
+
+You can integrate the Kafka MCP Server directly with VS Code's GitHub Copilot for a seamless development experience.
+
+### Prerequisites
+
+- **GitHub Copilot Extension** installed in VS Code ([Install here](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot))
+- Active GitHub Copilot subscription
+- Java 17+ and Kafka running
+
+> **Note:** MCP support is built into GitHub Copilot extension - no additional plugin needed!
+
+### Quick Setup
+
+1. **Build the project:**
+   ```bash
+   ./mvnw clean package -DskipTests
+   ```
+
+2. **Open Command Palette** (`Cmd+Shift+P` or `Ctrl+Shift+P`)
+
+3. **Run:** `MCP: List Servers`
+
+4. **Select:** `kafkaAdmin` and click `Start Server`
+
+5. **Enter Kafka bootstrap servers** (e.g., `localhost:9092`)
+
+6. **Use in Copilot Chat:**
+   ```
+   @workspace List all Kafka topics
+   @workspace Create a topic called "user-events" with 5 partitions
+   @workspace Describe the "orders" topic
+   ```
+
+### Configuration
+
+The MCP server configuration is pre-configured in `.vscode/mcp.json`. You can customize it for multiple environments or authentication.
+
+**📖 Complete Guide:** See [`doc/VSCODE_INTEGRATION.md`](doc/VSCODE_INTEGRATION.md) for detailed setup, configuration, and troubleshooting.
+
 ## ⚙️ Configuration
 
 ### LLM Model

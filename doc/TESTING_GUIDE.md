@@ -1,72 +1,76 @@
-# 🧪 Kafka MCP Testing Guide - End-to-End
+# 🧪 Kafka MCP Testing Guide
 
-## ✅ **Current Status: READY FOR TESTING**
+## ✅ **Current Status: PRODUCTION READY**
 
-Your UI is now **fully integrated** with the Kafka MCP implementation. Here's how to test it:
+The Kafka MCP Server is integrated with VS Code using Claude Sonnet 4.5 via the GitHub Copilot extension.
+
+---
+
+## 📋 **Architecture Overview**
+
+```
+You (VS Code) → Claude 4.5 (GitHub Copilot) → MCP Server (STDIO) → Kafka (Docker)
+```
+
+**Current Stack:**
+- **MCP Client**: VS Code with GitHub Copilot extension
+- **AI Model**: Claude Sonnet 4.5
+- **MCP Server**: Java-based Kafka admin tool (STDIO transport)
+- **Infrastructure**: Docker containers (Kafka, Zookeeper, etc.)
 
 ---
 
 ## 📋 **Pre-requisites Checklist**
 
 ### ✅ **Already Done:**
-- [x] `.env` file created with MCP configuration
-- [x] `McpChatInterface` component integrated in App.tsx
-- [x] "MCP Kafka Chat" button added to UI header
-- [x] MCP Client service configured
-- [x] AI Service (Ollama integration) ready
-- [x] Kafka MCP Server code completed
-- [x] Kafka MCP registered in agent-list.json
-- [x] Docker compose configured
+- [x] MCP Server built (kafka-mcp-server JAR)
+- [x] STDIO transport implemented (run-mcp-stdio.sh)
+- [x] VS Code MCP configuration (.vscode/mcp.json)
+- [x] Docker Compose setup
+- [x] 7 Kafka admin tools available
 
 ### ⚠️ **You Need to Do:**
-- [ ] Install Ollama (if not installed)
-- [ ] Pull llama3 model
-- [ ] Install Node.js dependencies
-- [ ] Start services
+- [ ] Install GitHub Copilot extension in VS Code
+- [ ] Build the MCP server
+- [ ] Start Docker containers
+- [ ] Configure and start MCP server in VS Code
 
 ---
 
 ## 🚀 **Step-by-Step Testing Instructions**
 
-### **Step 1: Install Ollama (LLM)**
+### **Step 1: Install GitHub Copilot Extension**
 
-```bash
-# macOS - Install Ollama
-brew install ollama
+1. Open VS Code
+2. Press `Cmd+Shift+X` (Mac) or `Ctrl+Shift+X` (Windows/Linux)
+3. Search for "**GitHub Copilot**"
+4. Click **Install**
+5. Sign in with your GitHub account (requires Copilot subscription)
 
-# Or download from: https://ollama.ai/download
-
-# Start Ollama service
-ollama serve
-
-# In a new terminal, pull the llama3 model
-ollama pull llama3
-
-# Verify it's working
-curl http://localhost:11434/api/tags
-```
-
-Expected output: JSON with llama3 in the list
+> **Note:** MCP server support is built into GitHub Copilot - no additional plugin needed!
 
 ---
 
-### **Step 2: Install Web App Dependencies**
+### **Step 2: Build the MCP Server**
 
 ```bash
-cd /Users/rgr/agentic-marketplace-ai-driven/web-app
+cd /Users/rgr/agentic-marketplace-ai-driven
 
-# Install dependencies
-npm install
+# Build the project
+./mvnw clean package -DskipTests
 
-# Verify .env file exists
-cat .env
+# Verify JAR was created
+ls -la mcp-server/kafka-mcp-server/target/kafka-mcp-server-*.jar
+
+# Make the launcher executable
+chmod +x run-mcp-stdio.sh
 ```
 
-Expected output: Should show MCP URLs and Ollama config
+Expected output: JAR file should exist (~50MB)
 
 ---
 
-### **Step 3: Start Backend Services with Docker**
+### **Step 3: Start Docker Infrastructure**
 
 ```bash
 cd /Users/rgr/agentic-marketplace-ai-driven
@@ -74,263 +78,176 @@ cd /Users/rgr/agentic-marketplace-ai-driven
 # Start all services
 docker-compose up -d
 
-# Wait 30-60 seconds for services to be healthy, then verify
+# Wait 30-60 seconds for services to be healthy
 docker-compose ps
 ```
 
 Expected status:
 ```
-NAME                        STATUS
-zookeeper                   Up (healthy)
-kafka                       Up (healthy)
-kafka-ui                    Up
-postgres                    Up (healthy)
-agent-registry              Up
-kafka-mcp-server            Up
+NAME                   STATUS
+zookeeper              Up (healthy)
+kafka                  Up (healthy)
+kafka-ui               Up
+agent-registry         Up (healthy)
+postgres               Up (healthy)
+```
+
+Verify Kafka is accessible:
+```bash
+docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
 ```
 
 ---
 
-### **Step 4: Verify Kafka MCP Server is Running**
+### **Step 4: Configure MCP Server in VS Code**
 
-```bash
-# Test health endpoint
-curl http://localhost:8081/health
+The `.vscode/mcp.json` file is already configured:
 
-# Test MCP tools/list endpoint
-curl -X POST http://localhost:8081/mcp/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "tools/list",
-    "params": {}
-  }'
-```
-
-Expected output:
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "tools": [
-      {
-        "name": "create_topic",
-        "description": "Creates a new Kafka topic",
-        ...
-      },
-      {
-        "name": "list_topics",
-        ...
+  "mcpServers": {
+    "kafkaAdmin": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/run-mcp-stdio.sh",
+      "args": [],
+      "env": {
+        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+        "KAFKA_ADMIN_TIMEOUT": "10000"
       }
-      // ... 9 tools total
-    ]
+    }
   }
 }
 ```
 
----
+To start the MCP server:
 
-### **Step 5: Start Web App Development Server**
+1. Open **Command Palette** (`Cmd+Shift+P` or `Ctrl+Shift+P`)
+2. Run: **`Developer: Reload Window`** (to load MCP configuration)
+3. Open GitHub Copilot Chat panel
+4. The MCP server should automatically start when needed
 
-```bash
-cd /Users/rgr/agentic-marketplace-ai-driven/web-app
-
-# Start Vite dev server
-npm run dev
-```
-
-Expected output:
-```
-VITE v5.0.12  ready in 523 ms
-
-➜  Local:   http://localhost:5173/
-➜  Network: use --host to expose
-```
+Alternative manual start:
+1. Open **Command Palette**
+2. Run: **`MCP: Restart Server`**
 
 ---
 
-### **Step 6: Open UI and Test MCP Chat**
+### **Step 5: Test Kafka Operations via Claude**
 
-1. **Open browser:** http://localhost:5173
-
-2. **You'll see the Agentic Marketplace home page with:**
-   - ⚡ **"MCP Kafka Chat"** button (NEW - green/teal color)
-   - ✨ "Register Your Agent" button
-   - Kafka MCP agent card in the agent list
-
-3. **Click the "⚡ MCP Kafka Chat" button**
-
-4. **You'll see the MCP Chat interface with:**
-   - Welcome message from AI assistant
-   - Tool count indicator (should show available tools)
-   - Connected servers list
-   - Chat input box
-
----
-
-### **Step 7: Test Kafka Operations via Natural Language**
-
-Try these queries in the MCP Chat:
+Open GitHub Copilot Chat in VS Code and try these commands:
 
 #### **Test 1: List Topics**
 ```
-User: "Show me all Kafka topics"
-or: "List all topics in the cluster"
+List all Kafka topics
 ```
 
-Expected behavior:
-- LLM analyzes the request
-- Discovers `list_topics` tool from Kafka MCP Server
-- Calls the tool via MCP protocol
-- Returns list of topics (empty if none exist yet)
+Expected: Claude uses the `list_topics` tool and shows you all topics.
 
 #### **Test 2: Create Topic**
 ```
-User: "Create a Kafka topic called user-events with 3 partitions"
+Create a Kafka topic called "orders" with 5 partitions
 ```
 
-Expected behavior:
-- LLM parses topic name and partition count
-- Calls `create_topic` tool with arguments
-- Returns success message
-- Topic is created in Kafka
+Expected: Claude calls `create_topic` and confirms creation.
 
 #### **Test 3: Describe Topic**
 ```
-User: "Describe the user-events topic"
-or: "Show me details of user-events"
+Describe the "orders" topic
 ```
 
-Expected behavior:
-- Calls `describe_topic` tool
-- Returns partition count, replication factor, config
+Expected: Shows partition count and other details.
 
-#### **Test 4: Check Cluster Health**
+#### **Test 4: Check if Topic Exists**
 ```
-User: "Check cluster health"
-or: "Show cluster overview"
+Does the topic "orders" exist?
 ```
 
-Expected behavior:
-- Calls `cluster_overview` tool
-- Returns broker info, topic count, etc.
+Expected: Claude uses `topic_exists` and confirms.
 
-#### **Test 5: Delete Topic**
+#### **Test 5: Cluster Overview**
 ```
-User: "Delete the test-topic"
+Show me the Kafka cluster overview
 ```
 
-Expected behavior:
-- Calls `delete_topic` tool
-- Confirms deletion
+Expected: Displays cluster information.
+
+#### **Test 6: Delete Topic**
+```
+Delete the Kafka topic "test-kafka"
+```
+
+Expected: Claude calls `delete_topic` and confirms deletion.
 
 ---
 
-## 🔍 **Verify End-to-End Flow**
+## 🔍 **Verification**
 
-### **Browser Developer Console (F12)**
+### **Check MCP Server Logs**
 
-You should see logs like:
-```
-✓ MCP initialized: 9 tools from 1 servers
-✓ Connected to kafka MCP server
-```
+View VS Code output panel:
+1. Open **Output** panel (`Cmd+Shift+U` or `Ctrl+Shift+U`)
+2. Select **"Model Context Protocol"** from the dropdown
+3. Look for:
+   ```
+   [info] Starting MCP server kafkaAdmin
+   [info] MCP server kafkaAdmin started successfully
+   ```
 
-### **Network Tab**
+### **Check Kafka UI**
 
-You should see requests to:
-- `http://localhost:11434/api/chat` (Ollama LLM)
-- `http://localhost:8081/mcp/message` (Kafka MCP Server)
+Open http://localhost:8088 in your browser to visually verify:
+- Topics created/deleted
+- Partition counts
+- Cluster health
 
-### **MCP Chat Interface**
+### **Test with Terminal**
 
-You should see:
-- User messages in blue/right side
-- Assistant responses in gray/left side
-- Tool call indicators showing which tools were used
+Verify operations directly:
+```bash
+# List topics
+docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
 
----
-
-## 🎯 **Architecture Flow During Test**
-
-```
-1. User types: "Create topic orders"
-   ↓
-2. React UI → aiService.chat(message)
-   ↓
-3. aiService → mcpService.getAllTools()
-   ↓
-4. mcpClient → Kafka MCP Server (tools/list)
-   ← Returns: 9 tools (create_topic, list_topics, etc.)
-   ↓
-5. aiService → Ollama LLM with tools list
-   ← LLM decides: "I should call create_topic tool"
-   ↓
-6. aiService → mcpService.callTool('kafka', 'create_topic', {topicName: 'orders'})
-   ↓
-7. mcpClient → Kafka MCP Server (tools/call)
-   ↓
-8. Kafka MCP Server → KafkaAdminService.createTopic()
-   ↓
-9. KafkaAdminService → Kafka Cluster Admin API
-   ← Topic created successfully
-   ↓
-10. Response flows back through stack
-    ↓
-11. UI displays: "✓ Topic 'orders' created successfully"
+# Describe a topic
+docker exec -it kafka kafka-topics --describe --topic orders --bootstrap-server localhost:9092
 ```
 
 ---
 
 ## 🐛 **Troubleshooting**
 
-### **Issue: "Failed to connect to MCP server"**
-```bash
-# Check if Kafka MCP Server is running
-docker logs kafka-mcp-server
+### **Issue: "MCP server failed to start"**
 
-# Check if port 8081 is accessible
-curl http://localhost:8081/health
-```
-
-### **Issue: "Ollama not responding"**
-```bash
-# Check if Ollama is running
-ps aux | grep ollama
-
-# Restart Ollama
-ollama serve
-
-# Check if llama3 is pulled
-ollama list
-```
-
-### **Issue: "No tools found"**
-```bash
-# Test MCP endpoint directly
-curl -X POST http://localhost:8081/mcp/message \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
+Check logs in VS Code Output panel. Common issues:
+- JAR file not built: Run `./mvnw clean package -DskipTests`
+- Script not executable: Run `chmod +x run-mcp-stdio.sh`
+- Java not found: Ensure Java 17+ is installed
 
 ### **Issue: "Kafka connection failed"**
+
 ```bash
-# Check Kafka health
+# Check if Kafka container is running
+docker ps | grep kafka
+
+# Check Kafka logs
 docker logs kafka
 
-# Verify Kafka is accessible
-docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
+# Verify Kafka port is accessible
+nc -zv localhost 9092
 ```
 
-### **Issue: "npm run dev fails"**
-```bash
-# Clear cache and reinstall
-rm -rf node_modules package-lock.json
-npm install
-npm run dev
-```
+### **Issue: "MCP server keeps waiting for initialize response"**
+
+This was fixed in the latest code. If you still see it:
+1. Rebuild the server: `./mvnw clean package -DskipTests`
+2. Restart VS Code: `Developer: Reload Window`
+3. Check that you're using the latest code
+
+### **Issue: "Tools not appearing"**
+
+1. Open Command Palette
+2. Run: `MCP: Restart Server`
+3. Check Output panel for errors
+4. Verify `.vscode/mcp.json` exists and is valid
 
 ---
 
@@ -338,18 +255,16 @@ npm run dev
 
 After testing, verify:
 
-- [ ] ✅ Ollama is running on port 11434
-- [ ] ✅ Kafka cluster is healthy
-- [ ] ✅ Kafka MCP Server is running on port 8081
-- [ ] ✅ Agent Registry Service is running on port 8090
-- [ ] ✅ Web app is accessible at port 5173
-- [ ] ✅ "MCP Kafka Chat" button is visible
-- [ ] ✅ MCP Chat shows "9 tools from 1 servers"
-- [ ] ✅ Can list Kafka topics
-- [ ] ✅ Can create Kafka topics
-- [ ] ✅ Can describe topics
-- [ ] ✅ Can delete topics
-- [ ] ✅ LLM understands natural language
+- [ ] ✅ GitHub Copilot extension installed
+- [ ] ✅ JAR file built successfully
+- [ ] ✅ Docker containers running (Kafka, Zookeeper)
+- [ ] ✅ MCP server starts without errors
+- [ ] ✅ Claude can list Kafka topics
+- [ ] ✅ Claude can create topics
+- [ ] ✅ Claude can describe topics
+- [ ] ✅ Claude can delete topics
+- [ ] ✅ Changes visible in Kafka UI (localhost:8088)
+- [ ] ✅ Claude understands natural language requests
 
 ---
 
@@ -357,37 +272,52 @@ After testing, verify:
 
 You'll know it's working when:
 
-1. ✅ You click "MCP Kafka Chat" and see the chat interface
-2. ✅ Chat shows "9 tools from 1 servers" indicator
-3. ✅ You type "Create a topic called test" and it actually creates the topic
-4. ✅ You can verify the topic exists in Kafka UI (http://localhost:8088)
-5. ✅ You can list topics and see your newly created topic
-6. ✅ The LLM understands various phrasings of the same intent
+1. ✅ You ask Claude to "list Kafka topics" and get actual topics
+2. ✅ You ask to "create a topic" and it appears in Kafka
+3. ✅ Changes are visible in Kafka UI (http://localhost:8088)
+4. ✅ Claude provides intelligent responses based on Kafka state
+5. ✅ No timeout errors in VS Code output panel
 
 ---
 
-## 🔄 **Alternative: Test via Agent Registry (Old Method)**
+## 🔄 **Alternative Testing Methods**
 
-If you want to test via the agent card instead:
+### **Direct STDIO Test**
 
-1. Click on the "Kafka Management (MCP)" card in the home page
-2. This will use the old `ChatInterface` component
-3. It connects to the agent endpoint, not directly to MCP
+Test the MCP server directly without VS Code:
 
-**Note:** The new MCP Chat method is recommended as it's the proper MCP implementation.
+```bash
+cd /Users/rgr/agentic-marketplace-ai-driven
+
+# Run the test script
+./test-mcp-response.sh
+```
+
+This sends a test JSON-RPC request and shows the response.
+
+### **Manual JSON-RPC Test**
+
+```bash
+# Send an initialize request
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | ./run-mcp-stdio.sh
+
+# Send a tools/list request
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | ./run-mcp-stdio.sh
+```
 
 ---
 
-## 📝 **Next Steps After Successful Test**
+## 📝 **Available MCP Tools**
 
-Once Kafka MCP is working:
+The Kafka MCP Server provides 7 tools:
 
-1. **Add Database MCP Server** (already discussed)
-2. **Add Redis MCP Server** (follow same pattern)
-3. **Enhance LLM prompts** for better tool selection
-4. **Add streaming responses** for real-time chat
-5. **Add conversation history persistence**
-6. **Deploy to production**
+1. **create_topic** - Create a new Kafka topic
+2. **list_topics** - List all topics
+3. **describe_topic** - Get detailed topic information
+4. **update_topic** - Update partition count
+5. **delete_topic** - Delete a topic (irreversible)
+6. **topic_exists** - Check if a topic exists
+7. **cluster_overview** - Get cluster information
 
 ---
 
@@ -395,10 +325,10 @@ Once Kafka MCP is working:
 
 If you encounter issues:
 
-1. Check browser console (F12) for errors
-2. Check docker logs: `docker-compose logs -f kafka-mcp-server`
-3. Verify all ports are accessible
-4. Ensure Ollama is running with llama3 model
-5. Test each component independently before integration
+1. Check VS Code Output panel (Model Context Protocol)
+2. Check Docker logs: `docker-compose logs -f kafka`
+3. Verify ports: 9092 (Kafka), 8088 (Kafka UI)
+4. Test Kafka independently: `docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092`
+5. Rebuild MCP server if code changed: `./mvnw clean package -DskipTests`
 
 **You're ready to test! Good luck! 🚀**
