@@ -159,6 +159,8 @@ The Kafka MCP Server provides 7 tools:
 
 - **[VS Code Integration Guide](doc/VSCODE_INTEGRATION.md)** - Complete setup, configuration, and troubleshooting
 - **[Testing Guide](doc/TESTING_GUIDE.md)** - Step-by-step testing instructions
+- **[MCP Language Decision Guide](doc/MCP_LANGUAGE_DECISION_GUIDE.md)** - Java vs Python vs Go vs TypeScript comparison (includes why agentic frameworks aren't needed for IDE-integrated MCP)
+- **[Memory Implementation Guide](doc/MEMORY_IMPLEMENTATION_GUIDE.md)** - Building memory layer: RAG, session, preferences, audit
 - **[Configuration Reference](doc/CONFIGURATION_REFERENCE.md)** - All configuration options
 - **[Memory Design Proposal](doc/MEMORY_DESIGN_PROPOSAL.md)** - Future memory system design
 - **[Web App MCP Client](web-app/MCP_CLIENT_README.md)** - Web application MCP implementation
