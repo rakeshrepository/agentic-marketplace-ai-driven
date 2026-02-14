@@ -12,7 +12,7 @@ This document provides a complete architecture for deploying Kafka MCP servers a
 
 ### What This Is
 
-A remote MCP server infrastructure that allows any developer in the company to manage Kafka clusters by simply talking to Claude/Copilot in VS Code — no Kafka CLI tools, no web portals, no terminal commands. Just natural language in the IDE.
+A remote MCP server infrastructure that allows any developer in the company to manage Kafka clusters by simply talking to the AI assistant in VS Code Copilot — no Kafka CLI tools, no web portals, no terminal commands. Just natural language in the IDE.
 
 ### How Developers Interact
 
@@ -22,18 +22,17 @@ A remote MCP server infrastructure that allows any developer in the company to m
 Developer's Laptop (VS Code)
     → Opens Copilot Chat
     → Types: "List all topics on dev Kafka cluster"
-    → Claude calls remote MCP server (behind the scenes)
+    → AI assistant calls remote MCP server (behind the scenes)
     → Results displayed in VS Code
 ```
 
 ### Key Design Decisions
 
 - **VS Code only** — All interaction happens inside the IDE. No web portals or external tools
-- **PingFederate SSO** — Authentication uses the same company SSO that developers already use for Jira, Confluence, etc. Sign in once (browser popup, identical to GitHub Copilot sign-in), then never think about it again
-- **VS Code extension for auth** — A lightweight extension handles authentication, token storage, and silent token refresh (same pattern as GitHub Copilot)
-- **3 Kafka clusters** — Dev, Staging, Production (architecture supports adding more in the future)
-- **New and existing users** — Works for developers who just installed VS Code and for those already using it with Copilot, extensions, etc.
-- **Python MCP server** — Remote server built with Python (FastAPI + confluent-kafka), deployed on Kubernetes
+- **PingFederate SSO** — Same company SSO used for Jira, Confluence. Sign in once on install, never again
+- **VS Code extension for auth** — ~150 lines. Prompts sign-in on install, caches tokens (keychain + memory), handles refresh silently. Same pattern as GitHub Copilot
+- **3 Kafka clusters** — Dev, Staging, Production (architecture supports adding more)
+- **Python MCP server** — FastAPI + confluent-kafka, deployed on Kubernetes
 
 ### At a Glance
 
@@ -64,26 +63,25 @@ The architecture uses a **single VS Code extension** for authentication and a **
 │  │ VS Code                                                             │ │
 │  │                                                                     │ │
 │  │  ┌──────────────────────────────────────────────────────────────┐ │ │
-│  │  │  MCP Auth Extension (ONE extension for all MCP servers)     │ │ │
-│  │  │  • PingFederate SSO sign-in (same as Copilot sign-in)      │ │ │
-│  │  │  • JWT token stored in OS keychain                         │ │ │
-│  │  │  • Silent token refresh (background, every 50 min)         │ │ │
-│  │  │  • Injects Authorization header into ALL MCP requests      │ │ │
+│  │  │  MCP Auth Extension (~150 lines)                            │ │ │
+│  │  │  • Sign-in prompt on first install (PingFederate SSO)      │ │ │
+│  │  │  • Token storage: keychain (persist) + memory (speed)      │ │ │
+│  │  │  • getSession() returns from memory (~0ms)                 │ │ │
+│  │  │  • Extension handles token refresh silently                │ │ │
 │  │  └──────────────────────────────────────────────────────────────┘ │ │
 │  │                                                                     │ │
 │  │  ┌──────────────────────────────────────────────────────────────┐ │ │
-│  │  │  .vscode/mcp.json (auto-configured by extension)            │ │ │
+│  │  │  ~/.vscode/mcp.json (static URLs only, no tokens)           │ │ │
 │  │  │  • mcp.company.com/kafka   → Kafka MCP server               │ │ │
 │  │  │  • mcp.company.com/database → Database MCP server           │ │ │
 │  │  │  • mcp.company.com/redis   → Redis MCP server               │ │ │
-│  │  │  • Same JWT token for ALL servers                           │ │ │
 │  │  └──────────────────────────────────────────────────────────────┘ │ │
 │  │                                                                     │ │
-│  │  GitHub Copilot (Claude) ← Developer talks here                   │ │
+│  │  GitHub Copilot ← Developer talks here                            │ │
 │  └─────────────────────────┬──────────────────────────────────────────┘ │
 └────────────────────────────┼────────────────────────────────────────────┘
                              │
-                             │ MCP Transport: Streamable HTTP (or SSE)
+                             │ MCP Transport: Streamable HTTP
                              │ Protocol: HTTPS (TLS 1.3)
                              │ Header: Authorization: Bearer <JWT>
                              │ Same token for ALL MCP servers
@@ -161,7 +159,7 @@ LAYER 1: Gateway Routing (URL path → which pod)
 LAYER 2: MCP Protocol (tool name → which function)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  Once the SSE/HTTP connection reaches the MCP server, everything
+  Once the HTTP request reaches the MCP server, everything
   follows the MCP JSON-RPC protocol. The MCP server handles:
 
   Step 1: VS Code sends "initialize" request
@@ -225,9 +223,9 @@ Copilot Chat matches intent: tool = "list_topics", server = "kafka-prod"
         │
         ▼
 VS Code MCP Client reads mcp.json:
-  "kafka-prod": { "type": "sse", "url": "https://mcp.company.com/kafka/prod" }
+  "kafka-prod": { "type": "http", "url": "https://mcp.company.com/kafka/prod" }
         │
-        ▼ POST https://mcp.company.com/kafka/prod  (or over existing SSE)
+        ▼ POST https://mcp.company.com/kafka/prod
           Authorization: Bearer <JWT>
           Body: { "method": "tools/call", "params": { "name": "list_topics" } }
         │
@@ -279,7 +277,7 @@ An MCP server pod is **NOT** a REST microservice. It does **not** define URL end
 |---|---|---|
 | **Endpoints** | Many: `GET /topics`, `POST /topics`, `DELETE /topics/{id}` | **One**: `/` (single endpoint) |
 | **Routing** | URL path + HTTP method | `"method"` + `"name"` fields inside JSON body |
-| **Protocol** | REST API | JSON-RPC over SSE or Streamable HTTP |
+| **Protocol** | REST API | JSON-RPC over Streamable HTTP |
 | **URL matching** | Yes (path patterns, route handlers) | **No** (all requests go to same endpoint) |
 
 ```
@@ -295,7 +293,7 @@ REST Microservice (NOT this):         MCP Server (THIS):
                                         All operations = same URL, different JSON body
 ```
 
-The MCP SDK (Python `mcp` library or Java Spring AI MCP) handles this automatically — it exposes one HTTP/SSE endpoint and dispatches internally by the JSON-RPC `method` and tool `name`. The pod just listens on one port (e.g., `8000`) at `/`.
+The MCP SDK (Python `mcp` library or Java Spring AI MCP) handles this automatically — it exposes one HTTP endpoint and dispatches internally by the JSON-RPC `method` and tool `name`. The pod just listens on one port (e.g., `8000`) at `/`.
 
 ### Why This Design?
 
@@ -315,6 +313,360 @@ When you need a new MCP server in the future:
 4. Update VS Code extension config to show new server
 5. **Developers get access immediately** — same token, same sign-in, no new login required
 
+### Multi-Environment UX: How the LLM Handles Environment Selection
+
+Since developers have ONE IDE but access MULTIPLE environments (dev, staging, prod), the LLM must intelligently determine which cluster to target. This works because **each Kafka cluster is a separate MCP server** with a descriptive label.
+
+**What the LLM sees** (from mcp.json server registrations):
+```
+Server: kafka-dev        Label: "Kafka Dev (us-east-1)"        Tools: list_topics, create_topic, ...
+Server: kafka-staging    Label: "Kafka Staging (us-east-1)"    Tools: list_topics, create_topic, ...
+Server: kafka-prod       Label: "Kafka Prod (us-east-1)"       Tools: list_topics, create_topic, ...
+Server: kafka-prod-eu    Label: "Kafka Prod (eu-west-1)"       Tools: list_topics, create_topic, ...
+```
+
+**LLM behavior based on developer intent:**
+
+| Developer says | LLM action |
+|---|---|
+| "List topics on **prod**" | Matches "prod" → calls `kafka-prod.list_topics` directly |
+| "List topics on **prod EU**" | Matches "prod" + "EU" → calls `kafka-prod-eu.list_topics` |
+| "Create topic orders on **dev**" | Matches "dev" → calls `kafka-dev.create_topic` |
+| "List topics" *(no env specified)* | **Asks the developer:** "Which environment? I can see Dev, Staging, Prod (us-east-1), and Prod (eu-west-1)" |
+| "List topics on **all clusters**" | Calls `list_topics` on each server, combines and presents results |
+| "Compare topic count across envs" | Calls `list_topics` on all servers, compares counts |
+
+**Why this works automatically (no custom code needed):**
+- VS Code's MCP client registers each server's tools with its server name as a namespace
+- The LLM can read server labels to understand which environment each represents
+- When ambiguous, the LLM naturally asks a clarifying question (same as any LLM chat)
+- The tool descriptions can include hints: e.g., `"Lists all Kafka topics on the dev cluster"`
+
+**Best practice for tool descriptions (in the MCP server):**
+```
+Rather than:     "Lists all Kafka topics"
+Use:             "Lists all Kafka topics on the dev cluster (us-east-1)"
+```
+This gives the LLM enough context to route correctly without asking.
+
+### End-to-End Request Flow: From Chat Message to API Response
+
+This section provides a complete walkthrough of how a developer's natural language request flows through the entire system. Understanding this flow is essential for debugging and extending the architecture.
+
+#### What Happens at Startup (One Time)
+
+When VS Code starts and loads mcp.json, this happens for **each** configured MCP server:
+
+```
+┌─ VS Code Startup ──────────────────────────────────────────────────────────┐
+│                                                                             │
+│  1. MCP Client reads mcp.json and finds servers:                           │
+│     - kafka-dev:    https://mcp.company.com/kafka/dev                      │
+│     - kafka-prod:   https://mcp.company.com/kafka/prod                     │
+│     - database-dev: https://mcp.company.com/database/dev                   │
+│                                                                             │
+│  2. FOR EACH SERVER, MCP Client connects and discovers tools:              │
+│                                                                             │
+│     ┌─ kafka-dev (POST /kafka/dev) ─────────────────────────────────────┐  │
+│     │ → Send: { "method": "initialize" }                                │  │
+│     │ ← Recv: { capabilities: { tools: true } }                         │  │
+│     │                                                                    │  │
+│     │ → Send: { "method": "tools/list" }                                │  │
+│     │ ← Recv: { tools: [list_topics, describe_topic, create_topic,     │  │
+│     │                   delete_topic, topic_exists, cluster_overview,   │  │
+│     │                   update_topic] }                                  │  │
+│     └────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│     ┌─ database-dev (POST /database/dev) ───────────────────────────────┐  │
+│     │ → Send: { "method": "initialize" }                                │  │
+│     │ ← Recv: { capabilities: { tools: true } }                         │  │
+│     │                                                                    │  │
+│     │ → Send: { "method": "tools/list" }                                │  │
+│     │ ← Recv: { tools: [list_tables, describe_table, run_query,        │  │
+│     │                   list_schemas, table_exists, explain_query] }    │  │
+│     └────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  3. Copilot Chat now has a MERGED tool palette:                            │
+│                                                                             │
+│     From kafka-dev:    list_topics, describe_topic, create_topic, ...     │
+│     From kafka-prod:   list_topics, describe_topic, create_topic, ...     │
+│     From database-dev: list_tables, describe_table, run_query, ...        │
+│                                                                             │
+│     Total: 13+ tools available for natural language invocation              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Example 1: "List all topics from dev"
+
+```
+┌─ DEVELOPER TYPES ──────────────────────────────────────────────────────────┐
+│                                                                             │
+│  Copilot Chat: "List all topics from dev"                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ COPILOT'S REASONING ──────────────────────────────────────────────────────┐
+│                                                                             │
+│  Intent Analysis:                                                           │
+│    • "topics" → matches kafka tools (list_topics, describe_topic, etc.)    │
+│    • "dev" → matches kafka-dev server                                      │
+│    • Action: list → matches list_topics tool                               │
+│                                                                             │
+│  Decision: Call list_topics on kafka-dev server                            │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ VS CODE MCP CLIENT ───────────────────────────────────────────────────────┐
+│                                                                             │
+│  Look up server URL from mcp.json:                                         │
+│    kafka-dev → https://mcp.company.com/kafka/dev                           │
+│                                                                             │
+│  Get JWT token from MCP Auth Extension (from memory cache, ~0ms)           │
+│                                                                             │
+│  Build HTTP request:                                                        │
+│    POST https://mcp.company.com/kafka/dev                                  │
+│    Headers:                                                                 │
+│      Authorization: Bearer eyJhbGciOiJSUzI1NiIs...                         │
+│      Content-Type: application/json                                        │
+│    Body:                                                                    │
+│      { "jsonrpc": "2.0",                                                   │
+│        "method": "tools/call",                                             │
+│        "id": 42,                                                           │
+│        "params": { "name": "list_topics", "arguments": {} } }              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ KONG API GATEWAY (AWS EKS) ───────────────────────────────────────────────┐
+│                                                                             │
+│  Receive: POST /kafka/dev                                                  │
+│                                                                             │
+│  Step 1: JWT Validation                                                    │
+│    • Extract token from Authorization header                               │
+│    • Validate signature using cached JWKS from PingFederate               │
+│    • Check expiry (exp claim)                                              │
+│    • ✓ Token valid                                                         │
+│                                                                             │
+│  Step 2: Route Matching                                                    │
+│    • URL path: /kafka/dev                                                  │
+│    • Match rule: /kafka/dev/* → kafka-mcp-dev-service:8000                │
+│    • Strip prefix: /kafka/dev → /                                          │
+│                                                                             │
+│  Step 3: Forward                                                           │
+│    • Forward to: http://kafka-mcp-dev-service:8000/                        │
+│    • Preserve all headers and body                                         │
+│                                                                             │
+│  NOTE: Gateway does NOT read JSON body. It doesn't know about MCP tools.   │
+│  It only validates JWT and routes by URL path.                             │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ KAFKA MCP SERVER (Pod in EKS) ────────────────────────────────────────────┐
+│                                                                             │
+│  Receive: POST / (prefix was stripped by gateway)                          │
+│                                                                             │
+│  Parse JSON-RPC:                                                           │
+│    method: "tools/call"                                                    │
+│    params.name: "list_topics"                                              │
+│    params.arguments: {}                                                     │
+│                                                                             │
+│  Dispatch:                                                                  │
+│    "list_topics" → handleListTopics()                                      │
+│                                                                             │
+│  Execute:                                                                   │
+│    kafka_admin = KafkaAdminClient(bootstrap_servers=["kafka-dev:9092"])    │
+│    topics = kafka_admin.list_topics()                                      │
+│    → ["orders", "payments", "users", "inventory", "audit-logs"]            │
+│                                                                             │
+│  Response:                                                                  │
+│    { "jsonrpc": "2.0",                                                     │
+│      "id": 42,                                                             │
+│      "result": { "content": [                                              │
+│        { "type": "text",                                                   │
+│          "text": "Found 5 topics: orders, payments, users, inventory,     │
+│                   audit-logs" }                                             │
+│      ] } }                                                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                Response flows back through Gateway → VS Code
+                                    │
+                                    ▼
+┌─ COPILOT CHAT DISPLAYS ────────────────────────────────────────────────────┐
+│                                                                             │
+│  "Found 5 topics on kafka-dev: orders, payments, users, inventory,        │
+│   audit-logs"                                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Example 2: "List all tables" (Different MCP Server)
+
+This example shows how the **same JWT token** works for a **different MCP server** (Database instead of Kafka):
+
+```
+┌─ DEVELOPER TYPES ──────────────────────────────────────────────────────────┐
+│                                                                             │
+│  Copilot Chat: "List all tables"                                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ COPILOT'S REASONING ──────────────────────────────────────────────────────┐
+│                                                                             │
+│  Intent Analysis:                                                           │
+│    • "tables" → matches database tools (list_tables, describe_table, etc.)│
+│    • Environment not specified → use default or ask                        │
+│    • Action: list → matches list_tables tool                               │
+│                                                                             │
+│  Decision: Call list_tables on database-dev server                         │
+│  (or ask "Which database environment?" if multiple are configured)         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ VS CODE MCP CLIENT ───────────────────────────────────────────────────────┐
+│                                                                             │
+│  Look up server URL from mcp.json:                                         │
+│    database-dev → https://mcp.company.com/database/dev                     │
+│                                         ^^^^^^^^^^^^                        │
+│                       DIFFERENT path prefix than Kafka                      │
+│                                                                             │
+│  Get JWT token from MCP Auth Extension (SAME token, from memory)           │
+│                                                                             │
+│  Build HTTP request:                                                        │
+│    POST https://mcp.company.com/database/dev                               │
+│    Headers:                                                                 │
+│      Authorization: Bearer eyJhbGciOiJSUzI1NiIs...  ← SAME token           │
+│      Content-Type: application/json                                        │
+│    Body:                                                                    │
+│      { "jsonrpc": "2.0",                                                   │
+│        "method": "tools/call",                                             │
+│        "id": 43,                                                           │
+│        "params": { "name": "list_tables", "arguments": {} } }              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ KONG API GATEWAY (AWS EKS) ───────────────────────────────────────────────┐
+│                                                                             │
+│  Receive: POST /database/dev                                               │
+│                                                                             │
+│  Step 1: JWT Validation                                                    │
+│    • SAME validation as before (JWT is user identity, not server-specific) │
+│    • ✓ Token valid                                                         │
+│                                                                             │
+│  Step 2: Route Matching                                                    │
+│    • URL path: /database/dev                                               │
+│    • Match rule: /database/dev/* → database-mcp-dev-service:8000          │
+│                   ^^^^^^^^^^^^                                              │
+│                   DIFFERENT route than /kafka/dev                          │
+│    • Strip prefix: /database/dev → /                                       │
+│                                                                             │
+│  Step 3: Forward                                                           │
+│    • Forward to: http://database-mcp-dev-service:8000/                     │
+│                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^                          │
+│                       DIFFERENT Kubernetes service                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─ DATABASE MCP SERVER (Different Pod) ──────────────────────────────────────┐
+│                                                                             │
+│  Parse JSON-RPC:                                                           │
+│    method: "tools/call"                                                    │
+│    params.name: "list_tables"                                              │
+│                                                                             │
+│  Execute:                                                                   │
+│    db = PostgresClient(host="postgres-dev", database="main")               │
+│    tables = db.query("SELECT table_name FROM information_schema.tables")   │
+│    → ["users", "orders", "products", "payments", "audit_log"]              │
+│                                                                             │
+│  Response:                                                                  │
+│    { "jsonrpc": "2.0",                                                     │
+│      "id": 43,                                                             │
+│      "result": { "content": [                                              │
+│        { "type": "text",                                                   │
+│          "text": "Found 5 tables: users, orders, products, payments,      │
+│                   audit_log" }                                              │
+│      ] } }                                                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Visual Summary: Multi-Server Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           VS CODE + COPILOT CHAT                            │
+│                                                                             │
+│  mcp.json:                          Copilot's Tool Palette:                │
+│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐│
+│  │ kafka-dev:    /kafka/dev    │    │ kafka-dev:                          ││
+│  │ kafka-prod:   /kafka/prod   │    │   • list_topics                     ││
+│  │ database-dev: /database/dev │    │   • describe_topic                  ││
+│  │ s3-dev:       /s3/dev       │    │   • create_topic                    ││
+│  └─────────────────────────────┘    │   • delete_topic                    ││
+│                                      │   • ...                             ││
+│  Auth Extension:                     │ database-dev:                       ││
+│  ┌─────────────────────────────┐    │   • list_tables                     ││
+│  │ JWT Token (memory cache)    │    │   • describe_table                  ││
+│  │ ✓ Same token for ALL calls  │    │   • run_query                       ││
+│  └─────────────────────────────┘    │   • ...                             ││
+│                                      │ s3-dev:                             ││
+│                                      │   • list_buckets                    ││
+│                                      │   • ...                             ││
+│                                      └─────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ HTTPS (JWT in header)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         KONG API GATEWAY (AWS EKS)                          │
+│                                                                             │
+│  URL Path Routing Rules:                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ /kafka/dev/*     → kafka-mcp-dev-service:8000                       │   │
+│  │ /kafka/prod/*    → kafka-mcp-prod-service:8000                      │   │
+│  │ /database/dev/*  → database-mcp-dev-service:8000                    │   │
+│  │ /s3/dev/*        → s3-mcp-dev-service:8000                          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  JWT Validation: ✓ (same for all routes, validates user identity)          │
+│                                                                             │
+└───────────┬───────────────┬────────────────┬───────────────┬────────────────┘
+            │               │                │               │
+            ▼               ▼                ▼               ▼
+     ┌──────────┐    ┌──────────┐     ┌──────────┐    ┌──────────┐
+     │  Kafka   │    │  Kafka   │     │ Database │    │    S3    │
+     │   MCP    │    │   MCP    │     │   MCP    │    │   MCP    │
+     │  (Dev)   │    │  (Prod)  │     │  (Dev)   │    │  (Dev)   │
+     └────┬─────┘    └────┬─────┘     └────┬─────┘    └────┬─────┘
+          │               │                │               │
+          ▼               ▼                ▼               ▼
+     ┌──────────┐    ┌──────────┐     ┌──────────┐    ┌──────────┐
+     │  Kafka   │    │  Kafka   │     │ Postgres │    │   AWS    │
+     │  Broker  │    │  Broker  │     │    DB    │    │    S3    │
+     │  (Dev)   │    │  (Prod)  │     │  (Dev)   │    │  (Dev)   │
+     └──────────┘    └──────────┘     └──────────┘    └──────────┘
+```
+
+#### Key Insights from These Flows
+
+| Aspect | How It Works |
+|--------|--------------|
+| **Tool Discovery** | Each MCP server advertises its own tools. Copilot merges all tools into one palette. |
+| **Server Selection** | Copilot matches user intent (keywords like "topics", "tables") to correct MCP server. |
+| **Route Decision** | URL path prefix (not tool name) determines which MCP server receives the request. |
+| **Token Reuse** | Same JWT token authenticates all requests—it represents the user, not the server. |
+| **Gateway Role** | Validates JWT, routes by URL path, forwards blindly—never parses MCP protocol. |
+| **MCP Server Role** | Parses JSON-RPC, dispatches by tool name, executes against backend system. |
+
 ---
 
 ## 🔐 1. Security Architecture: IDE to MCP Server
@@ -333,133 +685,364 @@ The authentication approach is **identical to how GitHub Copilot works in VS Cod
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ STEP 1: First-Time Sign-In (One-time, identical to Copilot)         │
-│                                                                      │
-│  Works for BOTH:                                                     │
-│   • New VS Code users (fresh install)                                │
-│   • Existing VS Code users (already have Copilot, extensions, etc.) │
+│ STEP 1: First-Time Sign-In (Immediate on Install)                   │
 └──────────────────────────────────────────────────────────────────────┘
 
-  1. Developer installs the MCP Auth extension from VS Code Marketplace
-     (or company distributes via VS Code Extension Pack)
-
-  2. First time the extension activates:
-     VS Code shows notification: "Sign in to Company Kafka MCP"
-     ┌─────────────────────────────────────────────┐
-     │ 🔑 MCP Kafka: Sign in to access clusters    │
-     │                                             │
-     │  [Sign In]    [Later]                       │
-     └─────────────────────────────────────────────┘
-
-  3. Developer clicks "Sign In":
-     → Default browser opens (Chrome/Safari/Firefox)
-     → PingFederate SSO login page (same page used for Jira, Confluence, etc.)
-     → Developer enters company credentials (same login they use daily)
-     → PingFederate authenticates and issues OAuth tokens
-
-  4. Browser shows: "Authentication successful. You can close this window."
-
-  5. VS Code extension receives tokens via OAuth callback:
-     - Access Token (JWT, 1 hour TTL)
-     - Refresh Token (30 days TTL)
-     - Tokens stored in VS Code Secret Storage (macOS Keychain / Windows Credential Manager)
-
-  6. VS Code shows: "✅ Connected to Kafka MCP. You have access to 3 clusters."
-
-  7. DONE. Developer never sees this login again.
+  1. Developer installs MCP Auth extension
+  2. Extension activates → immediately prompts: "Sign in to Company SSO"
+  3. Developer clicks "Sign In" → browser opens → PingFederate SSO
+  4. Developer logs in (same credentials as Jira, Confluence)
+  5. Tokens received:
+     - Access Token (JWT, 1 hour TTL) → stored in memory + keychain
+     - Refresh Token (30 days TTL) → stored in keychain
+  6. Done. Developer never sees this again.
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│ STEP 2: Every MCP Request (Automatic, Developer Sees Nothing)       │
+│ STEP 2: Every MCP Request (In-Memory, Instant)                      │
 └──────────────────────────────────────────────────────────────────────┘
 
-  Developer types in Copilot Chat: "List Kafka topics on dev"
+  Developer types: "List Kafka topics on dev"
 
-  Behind the scenes (invisible to developer):
+  1. VS Code calls: getSession('company-sso')
+  2. Extension returns session from MEMORY cache (no keychain read)
+  3. VS Code attaches: Authorization: Bearer <JWT>
+  4. Request sent → Results displayed
 
-  VS Code Extension:
-    1. Reads JWT token from VS Code Secret Storage
-    2. Attaches to MCP request:
-       - Authorization: Bearer <JWT_TOKEN>
-    3. Sends HTTPS request to: https://mcp.company.com
-
-  What the JWT token proves:
-    - "I am rgr@company.com" (identity)
-    - "I belong to data-platform team" (team membership)
-    - "I have access to dev, staging clusters" (permissions)
-
-  What the JWT token does NOT contain:
-    - No Kafka passwords
-    - No MSK credentials
-    - No secrets of any kind
-
-  The MCP server has its OWN credentials to connect to Kafka.
-  The developer never sees or needs Kafka credentials.
-
-  Request Flow:
-    VS Code → HTTPS (TLS 1.3) → API Gateway → MCP Server → Kafka Cluster
-
-  MCP Server:
-    1. Receives JWT from request header
-    2. Validates signature (was it signed by PingFederate? Not tampered?)
-    3. Extracts user identity and permissions
-    4. Executes Kafka operation
-    5. Returns results to VS Code
+  Why it's fast:
+    - Keychain read: once at extension startup
+    - Memory cache: used for all requests
+    - getSession(): returns from memory (~0ms)
 
 ┌──────────────────────────────────────────────────────────────────────┐
-│ STEP 3: Token Refresh (Automatic, Silent — Same as Copilot)         │
+│ STEP 3: Token Refresh (Extension Handles It)                        │
 └──────────────────────────────────────────────────────────────────────┘
 
-  VS Code Extension (runs silently in background, every 50 minutes):
-    1. Checks token expiry time
-    2. If token expires in < 10 minutes:
-       - Sends refresh request to PingFederate (using refresh token)
-       - Receives new access token
-       - Updates VS Code Secret Storage
-    3. Developer is never interrupted ✅
-    4. If refresh token expires (after 30 days of inactivity):
-       - VS Code shows notification: "Session expired. Please sign in again."
-       - Developer clicks "Sign In" → browser → SSO → done (30 seconds)
+  When getSession() is called and access token is expired:
+    1. Extension uses refresh token to get new access token
+    2. Updates memory cache + keychain
+    3. Returns valid session
+
+  If refresh token expires (30 days inactive):
+    - Extension prompts: "Session expired. Sign in again."
+    - Developer clicks → browser → SSO → 30 seconds
 ```
 
 ### Side-by-Side: GitHub Copilot vs MCP Kafka Auth
 
-| Aspect | GitHub Copilot (today) | MCP Kafka (our approach) |
-|--------|----------------------|---------------------------|
-| **Install** | Copilot extension from Marketplace | MCP Auth extension from Marketplace |
-| **First sign-in** | "Sign in to GitHub" → browser | "Sign in to Company SSO" → browser |
-| **SSO Provider** | GitHub OAuth | PingFederate OAuth 2.0 |
-| **Token storage** | VS Code Secret Storage (OS keychain) | VS Code Secret Storage (OS keychain) |
-| **Token sent** | Every request → GitHub API | Every request → MCP Server |
-| **Token refresh** | Silent, automatic | Silent, automatic |
-| **Developer sees auth?** | Never (after first sign-in) | Never (after first sign-in) |
-| **Session expired?** | "Sign in" notification | "Sign in" notification |
+| Aspect | GitHub Copilot | MCP Kafka (our approach) |
+|--------|----------------|---------------------------|
+| **First sign-in** | Immediate on install | Immediate on install |
+| **SSO Provider** | GitHub OAuth | PingFederate OAuth 2.0 + PKCE |
+| **Token storage** | Keychain (persistence) + Memory (speed) | Keychain (persistence) + Memory (speed) |
+| **getSession() performance** | Returns from memory (~0ms) | Returns from memory (~0ms) |
+| **Token refresh** | Extension handles silently | Extension handles silently |
+| **Extension code** | ~200 lines | ~150 lines |
 
 ### New Users vs Existing Users
 
 | Scenario | What Happens |
 |----------|-------------|
-| **New VS Code user** (fresh install) | Install VS Code → Install MCP Auth extension → Sign in once → Done |
-| **Existing VS Code user** (already has Copilot, etc.) | Install MCP Auth extension → Sign in once → Done. All existing extensions/settings untouched |
-| **User switching laptops** | Install MCP Auth extension on new laptop → Sign in once → Done |
-| **User returning after 30 days** | VS Code prompts "Sign in again" → Click → browser → SSO → 30 seconds |
+| **New VS Code user** | Install extension → Sign in once → Done |
+| **Existing VS Code user** | Install extension → Sign in once → Done (no impact on other extensions) |
+| **User returning after 30 days** | "Sign in again" prompt → 30 seconds |
 
-### JWT Token Structure (Issued by PingFederate)
+### Token Lifecycle: Why "30 Days Inactive" Requires Re-Sign-In
 
-```json
-{
-  "iss": "https://sso.company.com/pingfederate",
-  "sub": "user@company.com",
-  "aud": "mcp-api",
-  "exp": 1707750000,
-  "iat": 1707746400,
-  "email": "user@company.com",
-  "teams": ["data-platform", "backend-team"],
-  "roles": ["developer"],
-  "mcp_services": ["kafka", "database", "redis"]
-}
+When you sign in, PingFederate issues **two tokens** with different lifetimes:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         TWO TOKENS, TWO PURPOSES                            │
+│                                                                             │
+│  ┌─────────────────────────────┐    ┌─────────────────────────────────────┐│
+│  │      ACCESS TOKEN           │    │       REFRESH TOKEN                 ││
+│  │                             │    │                                     ││
+│  │  • TTL: 1 hour              │    │  • TTL: 30 days                     ││
+│  │  • Used for: API requests   │    │  • Used for: Getting new access    ││
+│  │  • Sent to: Kong Gateway    │    │    tokens when they expire         ││
+│  │                             │    │  • Sent to: PingFederate only      ││
+│  └─────────────────────────────┘    └─────────────────────────────────────┘│
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Note:** The `aud` (audience) is `mcp-api` — a single audience for ALL MCP servers. The gateway validates the token once, then routes to the correct server. PingFederate populates teams/roles from the corporate directory (Active Directory / LDAP). No manual role management needed.
+**Normal Flow (User Active Daily):**
+
+```
+Day 1, 9:00 AM - User signs in
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  → Access Token (expires 10:00 AM)
+  → Refresh Token (expires Day 31)
+
+Day 1, 10:05 AM - User runs "list topics" (access token expired)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─ Extension (automatic, silent) ──────────────────────────────────────────┐
+  │                                                                           │
+  │  1. Extension detects: "Access token expired"                            │
+  │                                                                           │
+  │  2. Extension calls PingFederate: POST /token                            │
+  │     Body: { grant_type: "refresh_token", refresh_token: "..." }          │
+  │                                                                           │
+  │  3. PingFederate checks: Is refresh token valid? YES (29 days left)     │
+  │                                                                           │
+  │  4. PingFederate returns: NEW access token (expires 11:05 AM)           │
+  │                                                                           │
+  │  5. Extension updates memory cache + keychain                            │
+  │                                                                           │
+  │  USER SEES NOTHING — completely silent, no browser, no prompt           │
+  │                                                                           │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+Day 2, Day 3, ... Day 29 - Same pattern
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Access token expires every hour → Extension silently refreshes
+  Refresh token still valid → User never sees sign-in prompt
+```
+
+**The 30-Day Inactive Scenario:**
+
+```
+Day 1, 9:00 AM - User signs in
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  → Access Token (expires 10:00 AM)
+  → Refresh Token (expires Day 31)
+
+Day 2 to Day 35 - User goes on vacation, doesn't open VS Code
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Day 35, 9:00 AM - User opens VS Code, runs "list topics"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─ Extension tries to refresh ─────────────────────────────────────────────┐
+  │                                                                           │
+  │  1. Extension detects: "Access token expired"                            │
+  │                                                                           │
+  │  2. Extension tries: POST /token with refresh_token                      │
+  │                                                                           │
+  │  3. PingFederate responds: 401 INVALID_GRANT                             │
+  │     "Refresh token expired" (it was 30 days, now it's day 35)           │
+  │                                                                           │
+  │  4. Extension: "I can't auto-refresh. Must ask user to sign in."        │
+  │                                                                           │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  ┌─ VS Code shows notification ─────────────────────────────────────────────┐
+  │                                                                           │
+  │  ┌──────────────────────────────────────────────────────────────────┐    │
+  │  │ ℹ️  Company SSO                                                   │    │
+  │  │                                                                    │    │
+  │  │  Your session has expired. Please sign in again.                 │    │
+  │  │                                                                    │    │
+  │  │  [ Sign In ]  [ Later ]                                          │    │
+  │  └──────────────────────────────────────────────────────────────────┘    │
+  │                                                                           │
+  │  This is VS Code's built-in authentication notification.                 │
+  │  Triggered when getSessions() returns empty but session is needed.      │
+  │                                                                           │
+  └───────────────────────────────────────────────────────────────────────────┘
+
+  User clicks "Sign In" → Browser opens → SSO login → New tokens → Done
+```
+
+**Token Timeline:**
+
+```
+        Day 1              Day 15            Day 30           Day 35
+          │                  │                  │                │
+          ▼                  ▼                  ▼                ▼
+    ┌──────────────────────────────────────────────────────────────────┐
+    │                    REFRESH TOKEN VALID                           │
+    │   (extension can silently get new access tokens — no prompts)   │
+    └──────────────────────────────────────────────────────────────────┘
+                                                │
+                                                │ EXPIRES
+                                                ▼
+                                          ┌──────────────────────┐
+                                          │  REFRESH TOKEN       │
+                                          │  EXPIRED             │
+                                          │                      │
+                                          │  Extension cannot    │
+                                          │  auto-refresh        │
+                                          │                      │
+                                          │  → Prompt: "Sign in" │
+                                          └──────────────────────┘
+```
+
+**Summary:**
+
+| Token | TTL | When It Expires | User Impact |
+|-------|-----|-----------------|-------------|
+| Access Token | 1 hour | Every hour | **None** — extension silently refreshes |
+| Refresh Token | 30 days | After 30 days of inactivity | **Prompt** — user clicks "Sign In" (30 sec) |
+
+**Why 30 days?** Security feature — if someone steals your laptop, tokens become useless after 30 days without your SSO password.
+
+### How Kong Gateway Validates JWT (JWKS Flow)
+
+**Critical Point:** Kong Gateway does NOT call PingFederate for every request. It uses cached **public keys** to validate JWT signatures locally.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    JWT VALIDATION (NO PER-REQUEST CALLS)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ONE-TIME SETUP (Kong startup + refresh every 5 minutes):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Kong Gateway                              PingFederate
+       │                                         │
+       │  GET https://sso.company.com/pf/JWKS    │
+       │────────────────────────────────────────▶│
+       │                                         │
+       │  Response (PUBLIC KEYS):                │
+       │  { "keys": [                            │
+       │    { "kid": "key-123",                  │
+       │      "kty": "RSA",                      │
+       │      "n": "0vx7agoebGc...",             │ ← Public key modulus
+       │      "e": "AQAB" }                      │
+       │  ]}                                     │
+       │◀────────────────────────────────────────│
+       │                                         │
+       └─ Cache in memory (refresh every 5 min)
+
+
+PER-REQUEST VALIDATION (local crypto, NO network call):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  VS Code Request                         Kong Gateway
+       │                                       │
+       │  POST /kafka/dev                      │
+       │  Authorization: Bearer eyJhbG...      │
+       │──────────────────────────────────────▶│
+       │                                       │
+       │       ┌───────────────────────────────┴────────────────────────────┐
+       │       │                                                            │
+       │       │  1. EXTRACT: Get JWT from Authorization header             │
+       │       │                                                            │
+       │       │  2. DECODE HEADER: { "alg": "RS256", "kid": "key-123" }   │
+       │       │                                           │                │
+       │       │  3. LOOKUP: Find public key from cache ───┘                │
+       │       │             cached_keys["key-123"] → RSA public key       │
+       │       │                                                            │
+       │       │  4. VERIFY SIGNATURE (local crypto operation):             │
+       │       │     RSA_VERIFY(                                           │
+       │       │       data = header + "." + payload,                      │
+       │       │       signature = token.signature,                        │
+       │       │       key = PUBLIC_KEY from cache                         │
+       │       │     )                                                      │
+       │       │     ✓ Returns TRUE → Token was signed by PingFederate    │
+       │       │                                                            │
+       │       │  5. CHECK EXPIRY: token.exp > now? ✓                      │
+       │       │                                                            │
+       │       │  6. CHECK AUDIENCE: token.aud == "mcp-api"? ✓            │
+       │       │                                                            │
+       │       │  All checks pass → Forward to MCP server                  │
+       │       │                                                            │
+       │       └────────────────────────────────────────────────────────────┘
+       │                                       │
+       │                                       ▼
+       │                               kafka-mcp-dev-service
+       │                              (NO auth code — trusts gateway)
+```
+
+**Why This Is Secure:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      ASYMMETRIC CRYPTOGRAPHY (RSA)                          │
+│                                                                             │
+│   ┌──────────────────┐                  ┌──────────────────┐               │
+│   │   PRIVATE KEY    │                  │   PUBLIC KEY     │               │
+│   │                  │                  │                  │               │
+│   │  • Kept SECRET   │                  │  • Published at  │               │
+│   │  • Only PingFed  │                  │    /pf/JWKS     │               │
+│   │    has it        │                  │  • Kong caches it│               │
+│   │                  │                  │                  │               │
+│   │  Used to SIGN    │       ═══▶       │  Used to VERIFY  │               │
+│   │  (create tokens) │  mathematically  │  (validate sign) │               │
+│   │                  │     linked       │                  │               │
+│   └──────────────────┘                  └──────────────────┘               │
+│                                                                             │
+│   • Only PingFederate can CREATE valid tokens (has private key)            │
+│   • Anyone with public key can VERIFY tokens (Kong)                        │
+│   • CANNOT forge a token without the private key                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Kong JWT Plugin Configuration:**
+
+```yaml
+# Kong JWT Plugin for JWKS validation
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: mcp
+plugin: jwt
+config:
+  # Where to find the token
+  header_names:
+    - Authorization
+
+  # JWKS endpoint (PingFederate's public keys)
+  # Kong fetches and caches automatically
+  jwks_uri: "https://sso.company.com/pf/JWKS"
+
+  # Cache refresh interval (seconds)
+  jwks_cache_timeout: 300  # 5 minutes
+
+  # Claims to validate
+  claims_to_verify:
+    - exp       # Token not expired
+
+  # Expected audience
+  # audience: "mcp-api"
+
+  # Which claim identifies the signing key
+  key_claim_name: "kid"
+
+  # Algorithm whitelist
+  algorithms:
+    - RS256     # RSA + SHA-256
+```
+
+**Performance:**
+
+| Operation | Latency | Network Call? |
+|-----------|---------|---------------|
+| JWKS fetch (startup) | ~50ms | Yes (once) |
+| JWKS refresh | ~50ms | Yes (every 5 min) |
+| JWT validation (per request) | ~1ms | **No** (local crypto) |
+
+### Why MCP Server Has Zero Auth Code
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SECURITY BOUNDARY                                   │
+│                                                                             │
+│   Internet ──────▶  [ Kong Gateway ]  ──────▶  [ MCP Server ]              │
+│   (untrusted)           (public)               (private K8s)               │
+│                            │                        │                       │
+│                      VALIDATES JWT             TRUSTS GATEWAY               │
+│                      (public network)          (private network)            │
+│                                                                             │
+│   • Kong is the ONLY entry point from internet (via ALB)                   │
+│   • MCP servers are on private Kubernetes network (ClusterIP, no Ingress) │
+│   • NetworkPolicy: MCP pods accept traffic ONLY from Kong namespace        │
+│   • If request reaches MCP server, it ALREADY passed gateway auth          │
+│   • Double-validation would be redundant and add latency                   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+This is standard microservice pattern (same as how internal services work at Netflix, Uber, etc.):
+
+| Component | Network Exposure | Auth Responsibility |
+|-----------|------------------|---------------------|
+| Kong Gateway | Public (ALB → Kong) | Validates JWT signature, expiry, audience |
+| MCP Server | Private (K8s ClusterIP) | Zero auth code — trusts gateway |
 
 ### Credential Separation
 
@@ -489,6 +1072,173 @@ The authentication approach is **identical to how GitHub Copilot works in VS Cod
 | **5. Backend Access** | Pod-level credentials | Each MCP server has its own backend credentials |
 | **6. Audit** | All operations logged | Every MCP request logged with user identity |
 | **7. Secrets** | AWS Secrets Manager | Kafka creds, PingFederate client secrets |
+
+### mcp.json Configuration
+
+> **Note:** `mcp.json` contains **only server URLs** — no tokens. Authentication is handled by the MCP Auth extension.
+
+**Complete mcp.json Reference (Multi-Environment, Multi-Service):**
+
+```json
+{
+  "servers": {
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // KAFKA MCP SERVERS (4 environments)
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    "kafka-dev": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/dev",
+      "label": "Kafka DEV (us-east-1)"
+    },
+    "kafka-sit": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/sit",
+      "label": "Kafka SIT (us-east-1)"
+    },
+    "kafka-uat": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/uat",
+      "label": "Kafka UAT (us-east-1)"
+    },
+    "kafka-prod": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/prod",
+      "label": "Kafka PROD (us-east-1)"
+    },
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // DATABASE MCP SERVERS (4 environments)
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    "database-dev": {
+      "type": "http",
+      "url": "https://mcp.company.com/database/dev",
+      "label": "PostgreSQL DEV (us-east-1)"
+    },
+    "database-sit": {
+      "type": "http",
+      "url": "https://mcp.company.com/database/sit",
+      "label": "PostgreSQL SIT (us-east-1)"
+    },
+    "database-uat": {
+      "type": "http",
+      "url": "https://mcp.company.com/database/uat",
+      "label": "PostgreSQL UAT (us-east-1)"
+    },
+    "database-prod": {
+      "type": "http",
+      "url": "https://mcp.company.com/database/prod",
+      "label": "PostgreSQL PROD (us-east-1)"
+    }
+  }
+}
+```
+
+**Minimal mcp.json (dev only):**
+
+```json
+{
+  "servers": {
+    "kafka-dev": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/dev"
+    },
+    "database-dev": {
+      "type": "http",
+      "url": "https://mcp.company.com/database/dev"
+    }
+  }
+}
+```
+
+**URL Pattern Breakdown:**
+
+```
+https://mcp.company.com/kafka/dev
+│       │              │     │
+│       │              │     └── Environment: dev, sit, uat, prod
+│       │              └──────── Service: kafka, database, s3, etc.
+│       └─────────────────────── Gateway domain (single entry point)
+└─────────────────────────────── HTTPS (TLS required)
+```
+
+**Gateway Route Mapping:**
+
+| mcp.json URL Path | Routes To (K8s Service) |
+|-------------------|-------------------------|
+| `/kafka/dev` | `kafka-mcp-dev-service:8000` |
+| `/kafka/sit` | `kafka-mcp-sit-service:8000` |
+| `/kafka/uat` | `kafka-mcp-uat-service:8000` |
+| `/kafka/prod` | `kafka-mcp-prod-service:8000` |
+| `/database/dev` | `database-mcp-dev-service:8000` |
+| `/database/sit` | `database-mcp-sit-service:8000` |
+| `/database/uat` | `database-mcp-uat-service:8000` |
+| `/database/prod` | `database-mcp-prod-service:8000` |
+
+**Example Copilot Interactions:**
+
+| Developer Says | Copilot Matches | MCP Server Called |
+|----------------|-----------------|-------------------|
+| "List all topics from dev" | kafka-dev | `https://mcp.company.com/kafka/dev` |
+| "Show tables in UAT database" | database-uat | `https://mcp.company.com/database/uat` |
+| "Create topic orders on prod" | kafka-prod | `https://mcp.company.com/kafka/prod` |
+| "Describe users table in SIT" | database-sit | `https://mcp.company.com/database/sit` |
+| "List topics" (no env) | Asks: "Which environment?" | — |
+
+**Recommended Location:**
+
+| Location | Recommendation |
+|----------|----------------|
+| `~/.vscode/mcp.json` (user-level) | ✅ **Recommended** — applies to all workspaces |
+| `.vscode/mcp.json` (workspace) | ✅ OK — can be committed (no secrets) |
+
+**How Authentication Works:**
+
+1. Extension installed → prompts sign-in → tokens stored (keychain + memory)
+2. Every request: `getSession()` returns from memory → header attached → request sent
+
+### Rate Limiting Strategy (Per User)
+
+Rate limits are enforced at the API Gateway layer, identified by the `sub` claim in the JWT token.
+
+**Request Rate Limits**
+
+| Cluster | Requests/min | Requests/hr | Rationale |
+|---------|-------------|-------------|-----------|
+| Dev | 120 | 2,000 | Higher — developers experiment more |
+| Staging | 60 | 1,000 | Moderate usage |
+| Prod | 30 | 500 | Stricter — protect production |
+
+**Per-Tool Limits (by operation type)**
+
+| Operation Type | Tools | Limit | Rationale |
+|---|---|---|---|
+| Read-only | `list_topics`, `describe_topic`, `topic_exists`, `cluster_overview` | Standard (above) | Safe, no side effects |
+| Mutating | `create_topic`, `update_topic` | 5/min | Creates/modifies resources |
+| Destructive | `delete_topic` | 2/min | Irreversible — hard safety cap |
+
+**Concurrent Connection Limits**
+
+| Limit | Value | Rationale |
+|---|---|---|
+| Concurrent requests per user | 10 | Reasonable for interactive use |
+| Concurrent requests total (gateway) | 10,000 | 1,000 users × 10 concurrent |
+
+**Role-Based Overrides**
+
+| Role | Multiplier | Example (prod) |
+|---|---|---|
+| `developer` | 1× (standard) | 30 req/min |
+| `kafka-admin` | 2× | 60 req/min |
+| `service-account` | 5× | 150 req/min |
+
+**Rate Limit Behavior:**
+- Storage: Redis (distributed counting across gateway pods)
+- On Redis failure: **allow requests** (fault-tolerant — don't block all users)
+- Response when exceeded: HTTP 429 with `Retry-After` header
+- Headers returned: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
 
 ---
 
@@ -566,15 +1316,21 @@ spec:
 
 ---
 # =========================================
-# STATEFULSET: Kafka MCP Server (Per Cluster)
+# DEPLOYMENT: Kafka MCP Server (Per Cluster)
 # =========================================
+# MCP servers are STATELESS — use Deployment (not StatefulSet)
+# Benefits of Deployment over StatefulSet:
+#   - Faster scaling (parallel pod creation)
+#   - Faster rollouts (all pods update at once)
+#   - Simpler — no ordering constraints
+# StatefulSet is for stateful apps (databases), MCP servers have no local state.
+
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: kafka-mcp-dev-us-east-1
   namespace: mcp-kafka-dev
 spec:
-  serviceName: kafka-mcp-dev
   replicas: 2  # HA for reliability
   selector:
     matchLabels:
@@ -587,12 +1343,26 @@ spec:
         cluster: dev-us-east-1
     spec:
       serviceAccountName: kafka-mcp-dev-sa
+      # =========================================
+      # GRACEFUL SHUTDOWN
+      # =========================================
+      terminationGracePeriodSeconds: 60  # Allow 60s for in-flight requests
       containers:
       - name: kafka-mcp
         image: company-ecr.amazonaws.com/kafka-mcp-python:v2.1.0
         ports:
         - containerPort: 8000
           name: mcp-api
+        # =========================================
+        # LIFECYCLE HOOKS: Graceful shutdown
+        # =========================================
+        lifecycle:
+          preStop:
+            exec:
+              # Wait 30s before SIGTERM to allow:
+              # 1. Load balancer to stop sending new requests
+              # 2. In-flight requests to complete
+              command: ["/bin/sh", "-c", "sleep 30"]
         env:
         - name: CLUSTER_ID
           value: "dev-us-east-1"
@@ -614,6 +1384,23 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        # =========================================
+        # HEALTH CHECKS (Added for completeness)
+        # =========================================
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 2
         volumeMounts:
         - name: config
           mountPath: /app/config
@@ -634,7 +1421,7 @@ metadata:
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: StatefulSet
+    kind: Deployment
     name: kafka-mcp-dev-us-east-1
   minReplicas: 2
   maxReplicas: 10
@@ -711,6 +1498,131 @@ spec:
             name: kafka-mcp-prod-service
             port:
               number: 8000
+
+---
+# =========================================
+# KONG PLUGINS: Circuit Breaker, Rate Limiting
+# =========================================
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: circuit-breaker
+  namespace: mcp-system
+config:
+  # Circuit breaker configuration
+  failure_count_threshold: 5          # Open circuit after 5 failures
+  failure_window_seconds: 30          # Within 30 seconds
+  open_duration_seconds: 60           # Stay open for 60 seconds
+  half_open_requests: 3               # Allow 3 test requests in half-open state
+plugin: request-termination           # Or use custom circuit breaker plugin
+
+---
+# =========================================
+# KONG PLUGIN: OAuth JWT Validation
+# =========================================
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: oauth-validator
+  namespace: mcp-system
+config:
+  # JWKS-based JWT validation (no per-request PingFederate calls)
+  key_claim_name: kid
+  claims_to_verify:
+    - exp                              # Token not expired
+    - aud                              # Audience is "mcp-api"
+  jwks_uri: "https://sso.company.com/pf/JWKS"
+  jwks_cache_ttl: 3600                 # Cache JWKS for 1 hour
+  audience: "mcp-api"
+  issuer: "https://sso.company.com/pingfederate"
+plugin: jwt
+
+---
+# =========================================
+# POD DISRUPTION BUDGET (Critical for HA)
+# =========================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-mcp-dev-pdb
+  namespace: mcp-kafka-dev
+spec:
+  minAvailable: 1                      # At least 1 pod during node drains
+  selector:
+    matchLabels:
+      app: kafka-mcp
+      cluster: dev-us-east-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-mcp-staging-pdb
+  namespace: mcp-kafka-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: kafka-mcp
+      cluster: staging-us-east-1
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-mcp-prod-pdb
+  namespace: mcp-kafka-prod
+spec:
+  minAvailable: 2                      # Prod requires 2 pods minimum
+  selector:
+    matchLabels:
+      app: kafka-mcp
+      cluster: prod-us-east-1
+
+---
+# =========================================
+# NETWORK POLICY: Isolate MCP Pods  
+# =========================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-mcp-network-policy
+  namespace: mcp-kafka-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka-mcp
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Only allow traffic from Kong gateway (mcp-system namespace)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: mcp-system
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Allow traffic to MSK clusters (VPC CIDR)
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8              # VPC CIDR - adjust to your VPC
+    ports:
+    - protocol: TCP
+      port: 9098                       # MSK IAM port
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow traffic to AWS APIs (STS for IRSA)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
 ```
 
 ### IAM Roles for MSK Access (Pod Identity)
@@ -1019,38 +1931,80 @@ async def call_tool(
     if not await check_rate_limit(rate_limit_key, cluster['rate_limit']):
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     
-    # 5. Route to backend MCP pod
+    # 5. Route to backend MCP pod (with retry and circuit breaker)
     backend_url = f"http://kafka-mcp-{cluster_id}-service.{cluster['mcp_namespace']}.svc.cluster.local:8000"
     
+    # Generate request ID for tracing
+    import uuid
+    request_id = str(uuid.uuid4())[:8]
+    
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{backend_url}/tools/call",
-                json=request,
-                headers={
-                    "X-User-Id": user_info['user_id'],
-                    "X-User-Email": user_info['email'],
-                    "X-Cluster-Id": cluster_id
-                },
-                timeout=30.0
-            )
-            
-            # 6. Audit log
-            await log_operation(
-                user_id=user_info['user_id'],
-                cluster_id=cluster_id,
-                operation=tool_name,
-                params=request.get('arguments', {}),
-                success=response.status_code == 200
-            )
-            
-            return response.json()
-            
-        except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="Backend timeout")
-        except Exception as e:
-            logger.error(f"Backend error: {e}")
-            raise HTTPException(status_code=502, detail="Backend error")
+        # Retry configuration
+        max_retries = 3
+        retry_delays = [0.5, 1.5, 4.5]  # Exponential backoff
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = await client.post(
+                    f"{backend_url}/tools/call",
+                    json=request,
+                    headers={
+                        "X-User-Id": user_info['user_id'],
+                        "X-User-Email": user_info['email'],
+                        "X-Cluster-Id": cluster_id,
+                        "X-Request-Id": request_id  # For distributed tracing
+                    },
+                    timeout=30.0
+                )
+                
+                # 6. Audit log
+                await log_operation(
+                    user_id=user_info['user_id'],
+                    cluster_id=cluster_id,
+                    operation=tool_name,
+                    params=request.get('arguments', {}),
+                    success=response.status_code == 200,
+                    request_id=request_id
+                )
+                
+                if response.status_code >= 500:
+                    # Server error - retry
+                    last_error = f"Backend returned {response.status_code}"
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delays[attempt])
+                        continue
+                
+                return response.json()
+                
+            except httpx.TimeoutException:
+                last_error = "Request timed out"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delays[attempt])
+                    continue
+                    
+            except httpx.ConnectError:
+                last_error = "Could not connect to backend"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delays[attempt])
+                    continue
+                    
+            except Exception as e:
+                # Log full error internally but don't expose to client
+                logger.error(f"Backend error [req={request_id}]: {type(e).__name__}: {e}")
+                last_error = "Internal error"
+                break
+        
+        # All retries exhausted
+        raise HTTPException(
+            status_code=502, 
+            detail={
+                "error": "Backend unavailable",
+                "message": f"Could not complete request after {max_retries} attempts. {last_error}",
+                "request_id": request_id,
+                "action": "Please retry in a few seconds. If the problem persists, contact #mcp-support"
+            }
+        )
 ```
 
 ---
@@ -1061,18 +2015,19 @@ async def call_tool(
 
 **Questions & Answers:**
 
-**Q1: How do we ensure HA and disaster recovery?**
+**Q1: How do we ensure high availability (HA) in a single region?**
 - Multi-AZ EKS cluster (3 availability zones)
-- StatefulSet replicas=2 minimum per cluster
+- Deployment replicas=2 minimum per cluster (Deployment, not StatefulSet — MCP servers are stateless)
 - ALB health checks with automatic pod replacement
 - RTO: <5 minutes, RPO: 0 (no data loss, Kafka is source of truth)
 - Backup strategy: Configuration in Git, audit logs in S3
+
+**DR status:** Multi-region disaster recovery is **out of scope** for the current phase (TBD for future). No cross-region failover is implemented.
 
 **Q2: How do we handle burst traffic (Black Friday scenario)?**
 - HPA: auto-scale from 2→10 replicas based on CPU/requests
 - Kong rate limiting protects backend (100 req/min per user)
 - Redis caching for list_topics (30s TTL)
-- CloudFront caching for static responses
 - Circuit breaker prevents cascade failures
 
 **Q3: What's the blast radius if MCP server compromised?**
@@ -1087,7 +2042,6 @@ async def call_tool(
 - Use Spot instances for dev/staging (50% cost savings)
 - Reserved instances for prod MCP pods (40% savings)
 - Auto-scale down during nights/weekends (save 30%)
-- CloudFront caching reduces backend calls (20% cost reduction)
 
 **Q5: How to handle regulatory compliance (SOC2, GDPR)?**
 - All operations logged with full audit trail
@@ -1097,6 +2051,34 @@ async def call_tool(
 - Data retention policies enforced (90 days)
 - Right to be forgotten (delete user audit logs)
 
+**Q6: Why Kong Gateway instead of AWS API Gateway?**
+- **Latency:** Kong runs in same VPC as MCP servers (~1-5ms). AWS API Gateway adds ~20-50ms via VPC Link.
+- **Cost:** Kong is fixed cost (pods). AWS API Gateway charges per request ($3.50/million).
+- **Control:** Full control over Kong plugins, routing, rate limiting.
+- **Kubernetes-native:** Kong integrates with Ingress, CRDs. AWS API Gateway is separate infrastructure.
+- See ADR-003 for detailed comparison.
+
+**Q7: Why Streamable HTTP instead of SSE (Server-Sent Events)?**
+- **Kafka operations are fast:** `list_topics`, `describe_topic` complete in <500ms. No need for streaming.
+- **Simpler architecture:** Stateless HTTP requests, no persistent connections to manage.
+- **Better scaling:** No connection pooling issues at gateway.
+- **Standard HTTP:** Works with all proxies, load balancers, firewalls.
+- See ADR-004 for detailed comparison.
+
+**Q8: How does the gateway validate JWT without calling PingFederate per request?**
+- Kong fetches **JWKS (public keys)** from PingFederate at startup, caches for 5 minutes.
+- Per request: Kong validates JWT signature using cached public key (local crypto, ~1ms).
+- **No network call per request.** This is standard JWT validation pattern.
+- If PingFederate is down: Existing tokens continue to work for up to 1 hour (JWKS cache TTL).
+- See "How Kong Gateway Validates JWT (JWKS Flow)" section for visual diagram.
+
+**Q9: How does the VS Code extension know which MCP server to call?**
+- Extension doesn't decide — **Copilot does.**
+- Copilot matches user intent ("list topics from dev") to MCP server name (`kafka-dev`).
+- mcp.json maps server names to URLs: `kafka-dev` → `https://mcp.company.com/kafka/dev`
+- Same JWT token works for all MCP servers (token represents user, not server).
+- See "End-to-End Request Flow" section for complete walkthrough.
+
 ---
 
 ### 💻 Developer Concerns
@@ -1104,28 +2086,56 @@ async def call_tool(
 **Questions & Answers:**
 
 **Q1: How do I get started? (Onboarding)**
-```bash
-# Step 1: Install CLI (5 minutes)
-$ npm install -g @company/mcp-setup
 
-# Step 2: Authenticate (1 minute)
-$ mcp-setup init
-# Opens browser → SSO login → Done!
+```
+Step 1: Install MCP Auth Extension (2 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Open VS Code Extensions (Ctrl+Shift+X / Cmd+Shift+X)
+  • Search: "Company MCP Auth"
+  • Click Install
+  • Extension prompts: "Sign in to Company SSO"
+  • Browser opens → SSO login → Done!
 
-# Step 3: VS Code auto-configured ✅
-# Open Copilot Chat and type:
-> List Kafka clusters I can access
+Step 2: Add mcp.json (1 minute, one-time)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Create file: ~/.vscode/mcp.json (or get from team wiki)
+  • Paste this:
+  
+  {
+    "servers": {
+      "kafka-dev": {
+        "type": "http",
+        "url": "https://mcp.company.com/kafka/dev"
+      },
+      "kafka-prod": {
+        "type": "http",
+        "url": "https://mcp.company.com/kafka/prod"
+      }
+    }
+  }
 
-# Done! Start working immediately.
+Step 3: Start using! (0 minutes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  • Open Copilot Chat (Ctrl+Shift+I / Cmd+Shift+I)
+  • Type: "List all topics from dev"
+  • Copilot calls the MCP server, shows results!
+
+That's it. No CLI tools, no environment variables, no local servers.
 ```
 
-**Q2: Which clusters can I access?**
-- Ask Claude in VS Code: "What Kafka clusters do I have access to?"
-- Or visit: https://mcp-portal.company.com/my-access
-- Access is based on your team membership and role
-- Typically: All devs get dev + staging, prod requires approval
+**Q2: How does Copilot know which MCP server to use?**
+- When you say "list topics from **dev**", Copilot matches "dev" to the `kafka-dev` server in mcp.json
+- When you say "show tables in **UAT database**", it matches to `database-uat`
+- If ambiguous (e.g., just "list topics"), Copilot asks: "Which environment?"
+- The matching is based on server names and labels in mcp.json
 
-**Q3: I need production access, how?**
+**Q3: Which clusters can I access?**
+- You can access any cluster whose URL is in your mcp.json
+- Your JWT token (from SSO) determines permissions at the gateway
+- Typically: All devs get dev + staging access. Prod requires approval.
+- To check your access: Try "list topics on prod" — if 403, you don't have access
+
+**Q4: I need production access, how?**
 - Submit ticket in self-service portal: https://mcp-portal.company.com/request-access
 - Select cluster(s) you need
 - Justify business need
@@ -1133,23 +2143,64 @@ $ mcp-setup init
 - Access granted in 1 business day
 - Time-limited (review every 90 days)
 
-**Q4: I'm getting rate limited, why?**
-- Dev: 100 req/min per user (very generous)
-- Staging: 50 req/min
+**Q5: I'm getting rate limited, why?**
+- Dev: 120 req/min per user (very generous)
+- Staging: 60 req/min
 - Prod: 30 req/min (protection against accidents)
 - If you hit limit: Wait 1 minute, then retry
 - If you need more: Create ticket explaining use case
 
-**Q5: Can I create topics in production?**
+**Q6: Can I create topics in production?**
 - Regular developers: Read-only access (list, describe)
 - Kafka admins: Can create/delete with approval ticket
 - Destructive operations require JIRA/ServiceNow ticket
 - Approval workflow: Submit ticket → Manager approves → Operation allowed
 
-**Q6: My token expired, what do I do?**
-- VS Code extension auto-refreshes tokens every hour
-- If manual refresh needed: Close VS Code, run `mcp-setup refresh`
-- If still issues: `mcp-setup logout && mcp-setup init`
+**Q7: My token seems expired, what do I do?**
+- **Normally:** Extension auto-refreshes silently (every hour). You won't notice.
+- **After 30 days inactive:** You'll see "Your session has expired. Sign in again."
+  - Click "Sign In" → Browser → SSO → 30 seconds → Done
+- **If still issues:** 
+  1. Open VS Code Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+  2. Type: "Sign Out of Company SSO"
+  3. Then: "Sign In to Company SSO"
+
+**Q8: What if I'm offline (airplane, no VPN)?**
+- MCP requires network connectivity to the MCP servers
+- Offline = no Kafka operations possible (by design — no local cache)
+- VS Code will show: "Cannot connect to MCP server. Check your network connection."
+- Once back online, existing authentication should still work (unless you were inactive >30 days)
+
+**Q9: I'm behind a corporate proxy, what do I need to configure?**
+- VS Code respects system proxy settings (`http_proxy`, `https_proxy` env vars)
+- Extension also reads VS Code proxy settings (`http.proxy`, `http.proxyStrictSSL`)
+- If issues, check with IT for proxy exceptions for `mcp.company.com` and `sso.company.com`
+- Self-test: `curl -v https://mcp.company.com/health` from terminal
+
+**Q10: How do I know how many requests I have left before rate limit?**
+- Every response includes headers: `X-RateLimit-Remaining`, `X-RateLimit-Limit`
+- VS Code extension status bar shows: "MCP: ✅ Connected (47/60 req/min)"
+- If rate limited (HTTP 429): message includes `Retry-After` header
+- Tip: Batch your queries instead of one-by-one
+
+**Q11: I got an error. What does it mean?**
+
+| Error | Meaning | Action |
+|-------|---------|--------|
+| `401 Unauthorized` | Token expired | Extension should auto-refresh. If persists (>30 days inactive), sign in again via VS Code |
+| `403 Forbidden` | You don't have access to this cluster/operation | Request access via self-service portal |
+| `429 Too Many Requests` | Rate limited | Wait for `Retry-After` seconds, then retry |
+| `502 Backend unavailable` | MCP server pod is down or restarting | Wait 30 seconds, retry. If persists, check `#mcp-support` |
+| `504 Gateway Timeout` | Operation took too long | Retry. If persists, the cluster may be overloaded |
+
+**Q12: Do I need to configure anything in mcp.json for authentication?**
+- **No!** mcp.json contains only server URLs. Example:
+  ```json
+  { "type": "http", "url": "https://mcp.company.com/kafka/dev" }
+  ```
+- The MCP Auth extension handles all authentication automatically
+- Token is added to every request by VS Code's MCP client
+- No tokens, secrets, or credentials in mcp.json
 
 ---
 
@@ -1165,7 +2216,7 @@ $ kubectl edit configmap kafka-clusters -n mcp-system
 # 2. Add cluster entry (copy template from existing)
 # Set: id, name, environment, bootstrap_servers, allowed_operations
 
-# 3. Deploy new MCP StatefulSet
+# 3. Deploy new MCP Deployment
 $ kubectl apply -f kafka-mcp-new-cluster.yaml
 
 # 4. Create IAM role for pod (Terraform)
@@ -1241,8 +2292,96 @@ Yes! Two methods:
 - MSK maintenance is transparent to MCP servers
 - MCP pods automatically reconnect on Kafka restart
 - No downtime for users
-- If issues: Check pod logs `kubectl logs -f kafka-mcp-prod-us-east-1-0`
-- Restart pod if needed: `kubectl rollout restart statefulset kafka-mcp-prod-us-east-1`
+- If issues: Check pod logs `kubectl logs -f -l app=kafka-mcp,cluster=prod-us-east-1`
+- Restart pods if needed: `kubectl rollout restart deployment kafka-mcp-prod-us-east-1`
+
+---
+
+### 🏢 Platform/SRE Operations Concerns
+
+**Questions & Answers:**
+
+**Q1: How do I know when a developer leaves the company?**
+- **Primary:** AD/LDAP group sync to PingFederate (automatic, ~15 min delay)
+- **Secondary:** HR termination webhook → triggers emergency blocklist
+- **Verification:** Weekly reconciliation script compares active users vs AD
+- **Gap:** If HR doesn't process termination, stale access can persist. Automate this.
+
+**Q2: How do I generate compliance reports?**
+```bash
+# Monthly access report (who has access to what)
+$ mcp-admin report access --month 2026-02 --output csv
+
+# Operations audit report (who did what)
+$ mcp-admin report audit --cluster prod-us-east-1 --days 30
+
+# Failed operations report (security investigation)
+$ mcp-admin report failures --days 7
+```
+
+**Q3: How do I perform a rollback if the new extension version has bugs?**
+1. **Extension rollback:**
+   - VS Code Marketplace allows previous version install
+   - Distribute `.vsix` of known-good version via Slack
+   - Users: Extensions → MCP Auth → Install Another Version... → select previous
+2. **Server rollback:**
+   ```bash
+   # Roll back Kubernetes deployment to previous revision
+   $ kubectl rollout undo deployment/kafka-mcp-prod-us-east-1 -n mcp-kafka-prod
+   
+   # Or specify exact revision
+   $ kubectl rollout undo deployment/kafka-mcp-prod-us-east-1 --to-revision=3
+   ```
+
+**Q4: What happens if PingFederate is down?**
+- **Impact:** New sign-ins fail. Token refresh fails.
+- **Mitigation:**
+  - Existing valid tokens continue to work (JWT validation is local via cached JWKS)
+  - JWKS cache TTL: 1 hour (can validate tokens for 1 hour after PF down)
+  - Alert: "PingFederate token endpoint latency > 2s" → investigate
+- **Recovery:** Once PF is back, users with expired tokens see "Sign in" prompt
+
+**Q5: How do I handle EKS cluster upgrades?**
+- **Before upgrade:**
+  1. Test in staging with same K8s version
+  2. Announce maintenance window (low-usage period)
+  3. Verify PDBs are in place (won't evict all pods at once)
+- **During upgrade:**
+  1. Node groups upgraded one at a time
+  2. PDB ensures `minAvailable: 1` maintained
+  3. Monitor for pod restarts and errors
+- **After upgrade:**
+  1. Verify all pods running: `kubectl get pods -n mcp-kafka-prod`
+  2. Run smoke test: call `list_topics` on each cluster
+  3. Monitor error rates for 1 hour
+
+**Q6: What's the single-region resiliency plan (DR out of scope)?**
+
+| Scenario | RTO | RPO | Recovery Steps |
+|----------|-----|-----|----------------|
+| Single pod crash | < 1 min | 0 | HPA spawns replacement automatically |
+| Node failure | < 5 min | 0 | Pods rescheduled to other nodes |
+| AZ outage | < 5 min | 0 | Multi-AZ deployment, traffic shifts |
+| EKS control plane issue | < 15 min | 0 | AWS handles, pods keep running |
+| Full region outage | Manual | 0 | Out of scope — no DR region configured |
+| MSK cluster failure | N/A | N/A | Out of scope — MSK team handles |
+
+**DR status:** Multi-region failover is not implemented in the current phase.
+
+**Q7: Cost attribution — how do I charge back to teams?**
+- Audit logs include `user_email` and `team` claims from JWT
+- Monthly report groups usage by team:
+  ```sql
+  SELECT 
+    user_info->>'team' as team,
+    COUNT(*) as total_requests,
+    COUNT(DISTINCT user_info->>'email') as unique_users
+  FROM mcp_audit_log
+  WHERE timestamp >= DATE_TRUNC('month', CURRENT_DATE)
+  GROUP BY team
+  ORDER BY total_requests DESC;
+  ```
+- Divide monthly infra cost ($1,250) by total requests, multiply by team's requests
 
 ---
 
@@ -1259,58 +2398,74 @@ Yes! Two methods:
         ↓
 09:10 - Developer receives welcome email:
         "Welcome! Set up your dev environment: 
-         https://mcp-portal.company.com/setup"
+         https://wiki.company.com/mcp-setup"
         ↓
-09:15 - Developer clicks link → Portal page shows:
+09:15 - Developer follows wiki guide:
         
-        ┌────────────────────────────────────────────┐
-        │  🚀 MCP Setup Guide                        │
-        │                                            │
-        │  1. Install CLI:                           │
-        │     $ npm install -g @company/mcp-setup    │
-        │                                            │
-        │  2. Authenticate:                          │
-        │     $ mcp-setup init                       │
-        │     [Opens browser for SSO login]          │
-        │                                            │
-        │  3. Done! VS Code is now configured.       │
-        │                                            │
-        │  Try it:                                   │
-        │  - Open VS Code                            │
-        │  - Open Copilot Chat (Cmd+Shift+I)        │
-        │  - Type: "List Kafka topics in dev"       │
-        └────────────────────────────────────────────┘
+        ┌────────────────────────────────────────────────────────────────┐
+        │  🚀 MCP Setup Guide (2 steps, ~3 minutes)                     │
+        │                                                                │
+        │  Step 1: Install MCP Auth Extension                           │
+        │  ─────────────────────────────────────────                    │
+        │  • Open VS Code                                               │
+        │  • Go to Extensions (Ctrl+Shift+X / Cmd+Shift+X)             │
+        │  • Search: "Company MCP Auth"                                 │
+        │  • Click Install                                              │
+        │  • Extension prompts: "Sign in to Company SSO" → Click it    │
+        │  • Browser opens → SSO login → Done!                          │
+        │                                                                │
+        │  Step 2: Add mcp.json                                         │
+        │  ─────────────────────────────────────────                    │
+        │  • Create file: ~/.vscode/mcp.json                            │
+        │  • Copy-paste from below (or download from wiki):             │
+        │                                                                │
+        │  {                                                            │
+        │    "servers": {                                               │
+        │      "kafka-dev": {                                           │
+        │        "type": "http",                                        │
+        │        "url": "https://mcp.company.com/kafka/dev"             │
+        │      },                                                       │
+        │      "kafka-staging": {                                       │
+        │        "type": "http",                                        │
+        │        "url": "https://mcp.company.com/kafka/staging"         │
+        │      }                                                        │
+        │    }                                                          │
+        │  }                                                            │
+        │                                                                │
+        │  That's it! No CLI, no environment variables.                │
+        └────────────────────────────────────────────────────────────────┘
         ↓
-09:25 - Developer runs: $ mcp-setup init
-        ↓ (CLI opens browser)
+09:17 - Developer installs extension
         ↓
-09:26 - Developer logs in with company SSO
+09:18 - Extension prompts "Sign in to Company SSO"
+        Developer clicks → Browser opens
         ↓
-09:27 - CLI receives OAuth tokens
-        CLI configures VS Code automatically:
-        ✅ Creates ~/.vscode/mcp.json
-        ✅ Stores tokens in OS keychain
-        ✅ Installs VS Code MCP extension
+09:19 - Developer logs in with company SSO (same creds as Jira)
         ↓
-09:30 - Developer opens VS Code
-        Opens Copilot Chat: "What Kafka clusters can I access?"
-        
-        Claude responds:
-        "You have access to 2 Kafka clusters:
-         1. Development (US East) - dev-us-east-1
-         2. Staging (US East) - staging-us-east-1
+09:20 - Tokens stored automatically in keychain
+        Extension shows: "✅ Signed in as john@company.com"
+        ↓
+09:21 - Developer creates mcp.json (copy-paste from wiki)
+        ↓
+09:22 - Developer opens Copilot Chat (Ctrl+Shift+I / Cmd+Shift+I)
+        Types: "List topics from dev"
+        ↓
+        Copilot:
+        "Found 47 topics on kafka-dev:
+         • orders
+         • payments
+         • users
+         • inventory
+         • audit-logs
+         ... (42 more)
          
-         You can list topics, create topics, and delete topics in both.
-         Would you like me to list topics from one of them?"
+         Would you like details on any of these?"
         ↓
-        Developer: "List topics from dev"
-        ↓
-        Claude: [Calls MCP tool] → Shows 47 topics
-        ↓
-09:35 - Developer productive! ✅
+09:23 - Developer productive! ✅
 
-Total onboarding time: 10 minutes
+Total onboarding time: ~3 minutes
 Manual intervention: ZERO ✅
+CLI tools required: NONE ✅
 ```
 
 ---
@@ -1323,14 +2478,14 @@ Manual intervention: ZERO ✅
 
 **Context:** 
 - Need to build remote MCP servers for Kafka administration
-- Must support SSE transport (Server-Sent Events)
+- Must support Streamable HTTP transport
 - Target: 100-1000 concurrent users
 
 **Rationale:**
 - ✅ Official MCP SDK (Anthropic maintains Python SDK)
 - ✅ 65% less code than Java (90 lines vs 300 lines)
 - ✅ Faster development iterations (no compile step)
-- ✅ Better ecosystem for SSE/WebSocket (FastAPI, Starlette)
+- ✅ FastAPI handles HTTP natively
 - ✅ confluent-kafka-python has 95% performance of Java (uses librdkafka C library)
 - ✅ Easier to hire Python developers for maintenance
 - ✅ Faster startup (0.5s vs Java's 2-3s) - better for auto-scaling
@@ -1343,25 +2498,45 @@ Manual intervention: ZERO ✅
 
 ---
 
-### ADR-002: Why StatefulSet instead of Deployment?
+### ADR-002: Why Deployment (Not StatefulSet) and Why One Per Cluster?
 
-**Decision:** Each Kafka cluster = separate StatefulSet (not Deployment)
+**Decision:** Use Deployment (not StatefulSet), with one Deployment per Kafka cluster
 
 **Context:**
 - Need to deploy Kafka MCP servers in Kubernetes
 - Each server connects to one MSK cluster
 - Require HA with multiple replicas
 
-**Rationale:**
-- ✅ Stable network identity (kafka-mcp-dev-0, kafka-mcp-dev-1)
-- ✅ Sticky sessions possible if needed for connection pooling
-- ✅ Easier audit trail (know which pod handled which request)
-- ✅ Can attach persistent volumes if caching layer added later
-- ✅ Graceful shutdown handling (drain connections before termination)
+**Part 1: Why Deployment over StatefulSet?**
 
-**Alternatives Considered:**
-- Deployment: Simpler but no stable identity
-- DaemonSet: One pod per node (overkill for our use case)
+MCP servers are **stateless** — they have no local data. All state is in Kafka (source of truth).
+
+| Feature | StatefulSet | Deployment | Needed for MCP? |
+|---------|-------------|------------|------------------|
+| Stable pod names (pod-0, pod-1) | ✅ | ❌ | No — any replica can serve any request |
+| Ordered startup/shutdown | ✅ | ❌ | No — pods are independent |
+| Persistent volumes | ✅ | ❌ | No — no local storage |
+| Parallel scaling | ❌ (sequential) | ✅ | **Yes — faster auto-scaling** |
+| Parallel rollouts | ❌ (sequential) | ✅ | **Yes — faster deployments** |
+
+**Part 2: Why one Deployment per Kafka cluster?**
+
+| Concern | One MCP → All Clusters | One MCP per Cluster |
+|---------|------------------------|---------------------|
+| **Security** | Pod has creds for ALL clusters | Pod has creds for ONE cluster only ✅ |
+| **Blast radius** | Compromise = all clusters exposed | Compromise = one cluster exposed ✅ |
+| **Isolation** | Bug in prod connection affects dev | Environments isolated ✅ |
+| **Scaling** | Can't scale prod independently | Scale prod to 5 replicas, keep dev at 2 ✅ |
+| **NetworkPolicy** | Can't restrict which pods talk to which clusters | MCP-prod can ONLY talk to Kafka-prod ✅ |
+
+**Result:**
+```
+kafka-mcp-dev (Deployment, 2 replicas) → Kafka Dev only
+kafka-mcp-staging (Deployment, 2 replicas) → Kafka Staging only  
+kafka-mcp-prod (Deployment, 3 replicas) → Kafka Prod only
+```
+
+**Is this a single point of failure?** No! Each Deployment has 2+ replicas. If one pod dies, others continue serving. Kubernetes restarts failed pods automatically.
 
 **Status:** Approved
 
@@ -1380,7 +2555,7 @@ Manual intervention: ZERO ✅
 - ✅ Better plugin ecosystem (OAuth, rate limiting, circuit breaker, custom plugins)
 - ✅ Open source, portable (not AWS lock-in, can move to GCP/Azure)
 - ✅ Native Kubernetes integration (Ingress controller)
-- ✅ WebSocket/SSE support (AWS API Gateway has limitations)
+- ✅ Handles HTTP/HTTPS natively
 - ✅ Lower cost at scale (no per-request charges)
 
 **AWS API Gateway pros:**
@@ -1400,95 +2575,81 @@ Manual intervention: ZERO ✅
 
 ---
 
-### ADR-004: MCP Transport Protocol — Streamable HTTP (and SSE)
+### ADR-004: MCP Transport Protocol — Streamable HTTP
 
-**Decision:** Use **Streamable HTTP** as the primary MCP transport, with SSE backward compatibility
+**Decision:** Use **Streamable HTTP** as the MCP transport
 
 **Context:**
 The MCP protocol defines how VS Code communicates with remote MCP servers. There are three transport options:
 
-| Transport | Use Case | How It Works |
-|-----------|----------|-------------|
-| **stdio** | Local MCP servers only | MCP server runs as a subprocess on the developer's laptop. VS Code launches the process and communicates via stdin/stdout. Not applicable for remote/cloud servers. |
-| **SSE** (Server-Sent Events) | Remote MCP servers (legacy) | The original remote transport. VS Code opens a persistent HTTP connection (SSE) to receive server-pushed events. Client-to-server messages sent via separate HTTP POST requests. |
-| **Streamable HTTP** | Remote MCP servers (current) | The newer transport (MCP spec 2025+). Uses standard HTTP POST for all messages. Supports optional streaming via SSE when the server needs to push data. Simpler, more gateway-friendly. |
+| Transport | Use Case |
+|-----------|----------|
+| **stdio** | Local MCP servers only (subprocess on laptop) |
+| **SSE** | Remote servers with long-running operations needing real-time progress |
+| **Streamable HTTP** | Remote servers with fast request/response operations |
 
-**How each transport works at the protocol level:**
+**Why Streamable HTTP for Kafka MCP:**
+
+Our Kafka operations are fast — no need for streaming:
+
+| Operation | Duration |
+|-----------|----------|
+| list_topics | ~100ms |
+| describe_topic | ~100ms |
+| create_topic | ~500ms |
+| delete_topic | ~500ms |
+
+**Streamable HTTP advantages:**
+
+| Aspect | SSE | Streamable HTTP |
+|--------|-----|-----------------|
+| Connection model | Persistent (long-lived) | Stateless (per-request) |
+| Complexity | Connection management needed | Simple HTTP POST |
+| Load balancing | Tricky (sticky sessions) | Easy (any pod can handle) |
+| Firewall/proxy | Sometimes blocked | Always works |
+| Scaling | Connection limits matter | Scales naturally |
+| Best for | Real-time progress, long operations | Fast request/response |
+
+**Our use case:**
+- Operations complete in <500ms
+- No real-time progress updates needed
+- Simple request → response pattern
+- Stateless servers scale better
+
+**Protocol flow:**
 
 ```
-STDIO (local only — NOT our use case):
-  VS Code ──stdin──→ MCP server process (on same machine)
-  VS Code ←─stdout── MCP server process
-  Limitation: server must run on developer's laptop
+Streamable HTTP (what we use):
 
-SSE (remote — legacy transport):
-  1. VS Code opens GET request → keeps connection open (SSE stream)
-  2. Server sends events down the SSE stream (tool results, notifications)
-  3. VS Code sends tool calls via separate POST requests to /message endpoint
-  4. Server responses arrive on the SSE stream
-  Flow: VS Code ──GET (SSE stream)──→ MCP Server (persistent connection)
-        VS Code ──POST /message────→ MCP Server (tool call)
-        VS Code ←──SSE event────── MCP Server (result)
+  VS Code                                MCP Server
+     │                                       │
+     │──POST /kafka/dev ────────────────────→│
+     │   Authorization: Bearer <JWT>         │
+     │   {"method": "tools/call",            │
+     │    "params": {"name": "list_topics"}} │
+     │                                       │
+     │←─────────────────── JSON response ────│
+     │   {"topics": ["orders", "users"]}     │
+     │                                       │
 
-Streamable HTTP (remote — current transport):
-  1. VS Code sends POST request to MCP server endpoint
-  2. Server can respond with:
-     a. Regular JSON response (simple request/response)
-     b. SSE stream (for long-running operations, streaming results)
-  3. No persistent connection required (but supported for streaming)
-  Flow: VS Code ──POST──→ MCP Server ──JSON response──→ VS Code
-    or: VS Code ──POST──→ MCP Server ──SSE stream──→ VS Code (streaming)
+  Each request is independent. No persistent connection.
+  Load balancer can route to any pod.
 ```
 
-**What this means for our architecture:**
+**mcp.json configuration:**
 
-```
-Developer's Laptop                        AWS Cloud
-┌──────────────┐                          ┌──────────────────┐
-│ VS Code      │    Streamable HTTP       │ API Gateway       │
-│              │──POST (tool call)───────→│ validates JWT     │
-│ mcp.json     │      HTTPS + JWT         │                  │
-│ tells VS Code│                          │ routes to MCP    │
-│ to use       │←─JSON or SSE stream─────│ server           │
-│ "type":"sse" │     (tool result)        │                  │
-│ or "http"    │                          └───────┬──────────┘
-└──────────────┘                                  │
-                                           ┌──────▼──────────┐
-                                           │ Kafka MCP Server │
-                                           │ (no auth code)   │
-                                           └─────────────────┘
+```json
+{
+  "servers": {
+    "kafka-dev": {
+      "type": "http",
+      "url": "https://mcp.company.com/kafka/dev"
+    }
+  }
+}
 ```
 
-**mcp.json server type field:**
-
-  In mcp.json, the "type" field tells VS Code which transport to use:
-  - `"type": "sse"` → SSE transport (widely supported, proven)
-  - `"type": "http"` → Streamable HTTP transport (newer, simpler)
-  - `"type": "stdio"` → Local subprocess (not for remote servers)
-
-  Our extension generates mcp.json with the appropriate type.
-  For maximum compatibility with current VS Code versions, we start with "sse".
-  When Streamable HTTP is fully stable across all VS Code versions, switch to "http".
-
-**Why SSE works well for our use case (and why we start with it):**
-- ✅ Supported in all VS Code versions with MCP support (1.96+)
-- ✅ Standard HTTP — works through corporate proxies and firewalls
-- ✅ API Gateway (Kong/Nginx/ALB) handles SSE natively
-- ✅ Automatic reconnection on network interruption
-- ✅ JWT token sent as standard HTTP header (Authorization: Bearer)
-- ✅ No WebSocket upgrade needed (simpler for enterprise networks)
-
-**Why Streamable HTTP is the future:**
-- ✅ Simpler — standard POST requests, no persistent connection required
-- ✅ Better for serverless/Lambda deployments (no long-lived connections)
-- ✅ Load balancers handle POST requests more predictably than SSE
-- ✅ Optional streaming when needed (SSE response body)
-- ✅ Becoming the default in MCP SDK 2025+
-
-**Migration path:** Start with `"type": "sse"` → switch to `"type": "http"` via
-a single extension settings update pushed to all 1,000 developers. Zero re-auth.
-
-**Status:** Approved (SSE as initial transport, Streamable HTTP as upgrade path)
+**Status:** Approved
 
 ---
 
@@ -1496,37 +2657,122 @@ a single extension settings update pushed to all 1,000 developers. Zero re-auth.
 
 ### Monthly Cost Breakdown (100 developers, 5 Kafka clusters)
 
+> ⚠️ **Note:** These are **realistic estimates** including commonly overlooked costs. Your actual costs may vary based on region, traffic patterns, and usage.
+
 | Component | Specification | Quantity | Unit Cost | Monthly Cost |
 |-----------|--------------|----------|-----------|--------------|
 | **EKS Control Plane** | Standard | 1 | $73/month | $73 |
 | **EC2 Instances (On-Demand)** | m5.xlarge (prod) | 3 | $144/month | $432 |
 | **EC2 Instances (Spot)** | m5.large (dev/staging) | 6 | $32/month | $194 |
-| **Application Load Balancer** | 1x ALB | 1 | $25/month | $25 |
-| **CloudFront** | ~1TB data transfer | - | $85/TB | $85 |
+| **Application Load Balancer** | 1x ALB + LCU hours | 1 | $35/month | $35 |
+| **NAT Gateway** | 2 AZs + data processing | 2 | $45/month | $90 |
 | **RDS PostgreSQL** | db.t3.medium (audit logs) | 1 | $65/month | $65 |
-| **ElastiCache Redis** | cache.t3.micro (rate limit) | 1 | $15/month | $15 |
-| **CloudWatch Logs** | 50GB/month retention | - | $0.50/GB | $25 |
-| **Secrets Manager** | 10 secrets | 10 | $0.40/secret | $4 |
-| **Route53** | Hosted zone | 1 | $0.50/month | $0.50 |
-| **VPC Endpoints** | S3, ECR, Secrets Manager | 3 | $7/month | $21 |
+| **ElastiCache Redis** | cache.t3.small (rate limit) | 1 | $25/month | $25 |
+| **CloudWatch Logs** | 100GB/month retention | - | $0.50/GB | $50 |
+| **CloudWatch Metrics** | Custom metrics + alarms | - | - | $30 |
+| **Secrets Manager** | 15 secrets + API calls | 15 | $0.40/secret | $10 |
+| **Route53** | Hosted zone + queries | 1 | $1/month | $1 |
+| **VPC Endpoints** | S3, ECR, Secrets, STS, CW | 5 | $7/month | $35 |
+| **ECR Storage** | Docker images | - | - | $15 |
+| **Cross-AZ Data Transfer** | ~100GB/month | - | $0.01/GB | $30 |
 | **AWS MSK** | *Already exists* | - | - | $0 (not counted) |
-| | | | **Total** | **~$940/month** |
+| | | | **Subtotal** | **$1,085** |
+| | | | **+ 15% contingency** | **$163** |
+| | | | **Total** | **~$1,250/month** |
 
-**Per developer cost:** $9.40/month per developer ✅
+**Per developer cost:** $12.50/month per developer
 
-**Scaling Projections:**
+### Commonly Overlooked Costs (Now Included)
+
+| Often Missed | Why It Matters | Estimated Impact |
+|--------------|----------------|------------------|
+| **NAT Gateway data processing** | Every KB to internet costs $0.045/GB | $50-200/month |
+| **Cross-AZ data transfer** | EKS spreads pods across AZs | $30-100/month |
+| **ECR storage + pull costs** | Docker image storage and pulls | $15-50/month |
+| **CloudWatch custom metrics** | Prometheus → CloudWatch if used | $20-50/month |
+| **Load testing environment** | Duplicate infra for testing | $200-500/month |
+| **Staging environment** | If full replica needed | $500-800/month |
+
+### Scaling Projections (Realistic)
 
 | Users | Monthly Cost | Per User | Notes |
 |-------|--------------|----------|-------|
-| 100 | $940 | $9.40 | Current estimate |
-| 500 | $1,850 | $3.70 | Economy of scale (same infra, more users) |
-| 1000 | $2,400 | $2.40 | Add 3 more nodes, scale horizontally |
+| 100 | $1,250 | $12.50 | Current realistic estimate |
+| 250 | $1,600 | $6.40 | Same infra, more users |
+| 500 | $2,400 | $4.80 | Add 2 nodes, scale Redis to t3.medium |
+| 1000 | $3,500 | $3.50 | Add 5 nodes, multi-AZ Redis, larger ALB |
 
-**Cost Optimizations Applied:**
+### Cost Optimizations Applied
 - ✅ Spot instances for dev/staging (50% savings)
 - ✅ Right-sized pods (512MB instead of 1GB)
-- ✅ CloudFront caching (reduces backend load)
-- ✅ Auto-scaling down nights/weekends (30% savings)
+- ✅ Auto-scaling down nights/weekends (potential 30% savings)
+- ✅ VPC Endpoints reduce NAT Gateway costs
+
+### Cost Optimizations NOT Yet Applied (Future)
+- ⬜ Reserved Instances / Savings Plans (40% savings on EC2)
+- ⬜ Graviton instances (20% cheaper, requires ARM builds)
+- ⬜ Karpenter auto-provisioner (right-size nodes dynamically)
+
+---
+
+## 🚨 Critical Items Before Staging (Must-Do Checklist)
+
+> **WARNING:** Do NOT deploy to staging until ALL P0 items are complete. These are non-negotiable for production readiness.
+
+### P0 — Blocking (Must complete before any staging deployment)
+
+| # | Item | Risk if Skipped | Effort | Owner |
+|---|------|-----------------|--------|-------|
+| 1 | **Kong JWKS configuration pointing to PingFederate** | JWT validation fails, all requests rejected | 4 hours | DevOps |
+| 2 | **Extension implements `vscode.AuthenticationProvider`** | Auth won't integrate with VS Code natively | 2 days | Extension team |
+| 3 | **Token storage: keychain (persistence) + memory (speed)** | Slow auth or lost tokens on restart | 1 day | Extension team |
+| 4 | **PodDisruptionBudget on all Deployments** | Outage during upgrades | 2 hours | DevOps |
+| 5 | **NetworkPolicy: MCP pods only accept traffic from Kong** | Lateral movement if breach | 4 hours | DevOps |
+| 6 | **Circuit breaker configured in Kong** | Cascade failure to Kafka | 1 day | DevOps |
+| 7 | **Graceful shutdown (preStop + terminationGracePeriod=60s)** | Dropped in-flight requests | 2 hours | DevOps |
+| 8 | **mcp.json contains ONLY URLs (no tokens)** | If tokens in mcp.json, credential leak risk | 1 day | Extension team |
+| 9 | **All runbooks written and reviewed** | Incident response failure | 3 days | SRE |
+
+### P1 — Required (Must complete before production GA)
+
+| # | Item | Risk if Skipped | Effort | Owner |
+|---|------|-----------------|--------|-------|
+| 10 | **Silent token refresh (using refresh token)** | Users prompted every hour | 1 day | Extension team |
+| 11 | **Token refresh retry with exponential backoff** | Transient PingFed failures = auth failure | 4 hours | Extension team |
+| 12 | **30-day inactive re-sign-in prompt** | Users see cryptic errors after long absence | 4 hours | Extension team |
+| 13 | **Corporate proxy support in extension** | Won't work for many devs behind proxy | 2 days | Extension team |
+| 14 | **Kong rate limiting per user (sub claim)** | Single user can overload backend | 1 day | DevOps |
+| 15 | **PingFederate health monitoring + alerting** | Silent auth failures | 4 hours | SRE |
+| 16 | **Load test at 2x target scale (200 concurrent users)** | Capacity surprises in prod | 2 days | QA |
+| 17 | **Security penetration test completed** | Vulnerabilities in prod | 1 week | Security |
+| 18 | **Rollback procedure documented and tested in dev** | Can't recover from bad deploy | 1 day | DevOps |
+
+### P2 — Recommended (Address after stable GA)
+
+| # | Item | Benefit | Effort |
+|---|------|---------|--------|
+| 19 | ~~Consider Deployment over StatefulSet~~ | ✅ Done — using Deployment | — |
+| 20 | **Extension status bar indicator (connected/disconnected)** | Better UX | 4 hours |
+| 21 | **Admin dashboard for access management** | Operational efficiency | 1 week |
+| 22 | **Automated Kafka credential rotation** | Reduce blast radius | 3 days |
+| 23 | **Multi-region deployment** | Out of scope for now | 2 weeks |
+| 24 | **Karpenter for node autoscaling** | Cost optimization | 1 week |
+| 25 | **Metrics dashboard (Grafana)** | Observability | 2 days |
+
+### Staging Gate Criteria
+
+**Before deploying to staging, confirm:**
+
+- [ ] All P0 items marked complete above
+- [ ] Extension tested: install → sign-in prompt → SSO flow → token stored → MCP request works
+- [ ] Kong validates JWT correctly (test with valid/invalid/expired tokens)
+- [ ] Load test results reviewed (p99 latency < 500ms at 100 users)
+- [ ] Security team sign-off obtained
+- [ ] Rollback procedure tested in dev
+- [ ] On-call rotation established
+- [ ] Incident response Slack channel created (`#mcp-incidents`)
+- [ ] PingFederate team notified of expected token load
+- [ ] mcp.json template documented in wiki (URLs only, no secrets)
 
 ---
 
@@ -1535,74 +2781,137 @@ a single extension settings update pushed to all 1,000 developers. Zero re-auth.
 ### Phase 1: Foundation (Weeks 1-4)
 
 **Week 1-2: Infrastructure Setup**
-- [ ] Provision EKS cluster in AWS
-- [ ] Setup VPC with private subnets for backend access
-- [ ] Deploy API Gateway (Kong / Nginx)
-- [ ] Configure ALB
-- [ ] Integrate with PingFederate (OAuth 2.0, JWKS endpoint for JWT validation)
-- [ ] Setup audit logging
 
-**Week 3-4: MCP Server + VS Code Extension Development**
-- [ ] Build Python Kafka MCP server (FastAPI + confluent-kafka)
-- [ ] Create Docker image + push to ECR
-- [ ] Deploy to K8s
-- [ ] Build VS Code auth extension (PingFederate SSO, token storage, auto-refresh)
-- [ ] Publish extension to VS Code Marketplace (or internal distribution)
-- [ ] Configure API Gateway routing (/kafka → Kafka MCP server)
+| Task | Details | Owner |
+|------|---------|-------|
+| Provision EKS cluster | Multi-AZ (3 zones), managed node groups | DevOps |
+| Setup VPC | Private subnets for MCP pods, public for ALB | DevOps |
+| Deploy Kong Gateway | Kong Ingress Controller on EKS | DevOps |
+| Configure Kong JWKS | Point to PingFederate `/pf/JWKS`, cache TTL 5 min | DevOps |
+| Configure Kong JWT plugin | Validate signature, check `exp`, extract `sub` for rate limiting | DevOps |
+| Setup ALB | HTTPS termination, route to Kong | DevOps |
+| PingFederate OAuth client | Register `mcp-vscode` client (public, PKCE, redirect to localhost) | Identity team |
+| Setup audit logging | CloudWatch Logs + S3 archival | DevOps |
 
-**Deliverables:**
-- ✅ Working Kafka MCP server for dev cluster
-- ✅ PingFederate authentication working via VS Code extension
-- ✅ VS Code can connect and list Kafka topics
+**Week 3-4: Kafka MCP Server + VS Code Extension**
+
+| Task | Details | Owner |
+|------|---------|-------|
+| Build Kafka MCP server | Python + FastAPI + confluent-kafka, Streamable HTTP transport | Backend |
+| Implement MCP tools | `list_topics`, `describe_topic`, `create_topic`, `delete_topic`, etc. | Backend |
+| Create Docker image | Multi-stage build, non-root user, push to ECR | Backend |
+| Deploy to EKS | Deployment (not StatefulSet), 2 replicas, HPA | DevOps |
+| Build VS Code extension | Implement `vscode.AuthenticationProvider` (~150 lines) | Extension team |
+| Extension: PKCE flow | Auth code + PKCE, localhost callback, browser redirect | Extension team |
+| Extension: Token storage | Keychain for persistence, memory cache for speed | Extension team |
+| Extension: Silent refresh | Use refresh token, update memory + keychain | Extension team |
+| Configure Kong routing | `/kafka/dev/*` → `kafka-mcp-dev-service:8000` | DevOps |
+| Document mcp.json | Wiki page with URL-only config (no tokens) | Extension team |
+
+**Week 4: Integration Testing**
+
+| Test | Expected Result |
+|------|-----------------|
+| Install extension | Sign-in prompt appears immediately |
+| Click "Sign In" | Browser opens PingFederate SSO |
+| Complete SSO | Token stored, extension shows "Connected" |
+| "List topics from dev" in Copilot | Returns topic list from Kafka dev cluster |
+| Wait 1+ hour | Token refreshes silently (no prompt) |
+| Invalid/expired token | 401 from Kong, extension refreshes |
+| User without access | 403 Forbidden |
+
+**Phase 1 Deliverables:**
+- ✅ Kong Gateway deployed with JWKS validation
+- ✅ Kafka MCP server (dev) accessible via Streamable HTTP
+- ✅ VS Code extension: install → sign-in → works
+- ✅ mcp.json documented (URLs only)
+- ✅ All P0 checklist items complete
 
 ---
 
-### Phase 2: Multi-Cluster & Additional MCP Servers (Weeks 5-8)
+### Phase 2: Multi-Environment & Hardening (Weeks 5-8)
 
-**Week 5-6: Multi-Cluster Kafka + Hardening**
-- [ ] Deploy Kafka MCP pods for staging + prod clusters
-- [ ] Configure per-cluster credentials (K8s Secrets)
-- [ ] Setup monitoring (Prometheus + Grafana)
-- [ ] Enable audit logging
-- [ ] Rate limiting via API Gateway
+**Week 5-6: Multi-Environment Kafka**
 
-**Week 7-8: Additional MCP Servers (Database, Redis, etc.)**
-- [ ] Build Database MCP server (pure DB logic, no auth code)
-- [ ] Build Redis MCP server (pure Redis logic, no auth code)
-- [ ] Deploy behind same API Gateway
-- [ ] Add routes: /database → DB MCP, /redis → Redis MCP
-- [ ] Update VS Code extension config to show new servers
-- [ ] Developers get access with same token — no new sign-in needed
+| Task | Details | Owner |
+|------|---------|-------|
+| Deploy kafka-mcp-staging | Same image, different K8s Secret (MSK staging creds) | DevOps |
+| Deploy kafka-mcp-prod | 3 replicas (HA), stricter resource limits | DevOps |
+| Kong routes | `/kafka/staging/*`, `/kafka/prod/*` | DevOps |
+| NetworkPolicy | Each MCP pod can ONLY talk to its assigned Kafka cluster | DevOps |
+| PodDisruptionBudget | `minAvailable: 1` on all Deployments | DevOps |
+| Rate limiting | Kong rate-limit plugin, per-user (sub claim), different limits per env | DevOps |
 
-**Deliverables:**
-- ✅ 3 Kafka clusters accessible (dev, staging, prod)
-- ✅ Database + Redis MCP servers deployed
-- ✅ All servers accessible with single SSO sign-in
+**Week 7-8: Production Hardening**
+
+| Task | Details | Owner |
+|------|---------|-------|
+| Circuit breaker | Kong circuit breaker plugin, trip at 50% error rate | DevOps |
+| Graceful shutdown | `preStop` hook + `terminationGracePeriod: 60s` | DevOps |
+| Monitoring | Prometheus metrics, Grafana dashboard | SRE |
+| Alerting | PagerDuty for p99 > 1s, error rate > 5% | SRE |
+| Runbooks | Troubleshooting guides for common issues | SRE |
+| Extension: 30-day prompt | Clear message when refresh token expires | Extension team |
+| Extension: Proxy support | Respect VS Code proxy settings | Extension team |
+| Load test | 200 concurrent users, p99 < 500ms | QA |
+
+**Phase 2 Deliverables:**
+- ✅ 4 Kafka environments: dev, sit, uat, prod
+- ✅ Environment isolation (NetworkPolicy)
+- ✅ Rate limiting active
+- ✅ Monitoring + alerting in place
+- ✅ All P1 checklist items complete
 
 ---
 
-### Phase 3: Production Rollout (Weeks 9-12)
+### Phase 3: Additional MCP Servers & GA (Weeks 9-12)
 
-**Week 9-10: Staging Rollout**
-- [ ] Onboard 10 beta users
-- [ ] Collect feedback
-- [ ] Fix bugs
-- [ ] Load testing (simulate 100 concurrent users)
-- [ ] Tune auto-scaling settings
+**Week 9-10: Database MCP Server**
+
+| Task | Details | Owner |
+|------|---------|-------|
+| Build Database MCP server | Python + psycopg2, tools: `list_tables`, `describe_table`, `run_query` | Backend |
+| Deploy (4 envs) | database-mcp-dev, sit, uat, prod | DevOps |
+| Kong routes | `/database/dev/*`, `/database/sit/*`, etc. | DevOps |
+| Update mcp.json template | Add database server URLs | Extension team |
+| Test | Same JWT token works for Database MCP (no new sign-in) | QA |
 
 **Week 11-12: Production Rollout**
-- [ ] Create runbooks (troubleshooting guides)
-- [ ] Announce to company (all-hands, Slack)
-- [ ] Onboard first 50 users
-- [ ] Monitor metrics closely
-- [ ] Gradual rollout to all developers
 
-**Deliverables:**
-- ✅ 100+ users onboarded
-- ✅ SLA: 99.9% uptime
-- ✅ All MCP servers accessible via single sign-in
+| Task | Details | Owner |
+|------|---------|-------|
+| Beta rollout | 20 users, collect feedback | Product |
+| Security pen test | External firm or internal red team | Security |
+| Fix issues | Address findings from beta + pen test | All |
+| Company announcement | All-hands, Slack, wiki | Product |
+| Gradual rollout | 50 → 100 → all developers | Product |
+| Support process | `#mcp-support` Slack channel, on-call rotation | SRE |
+
+**Phase 3 Deliverables:**
+- ✅ Kafka + Database MCP servers in production
+- ✅ 100+ developers onboarded
+- ✅ Security pen test passed
+- ✅ On-call rotation established
+- ✅ All P2 checklist items addressed
 
 ---
+
+### Timeline Summary
+
+```
+Week 1-2    Week 3-4    Week 5-6    Week 7-8    Week 9-10   Week 11-12
+────────────────────────────────────────────────────────────────────────
+│ Infra    │ MCP +     │ Multi-env │ Hardening │ Database  │ GA       │
+│ Setup    │ Extension │ Kafka     │ + Monitor │ MCP       │ Rollout  │
+────────────────────────────────────────────────────────────────────────
+         PHASE 1                  PHASE 2                 PHASE 3
+        (Foundation)          (Hardening)              (Scale)
+```
+
+**Team Size:** 2 engineers (1 Backend/MCP, 1 DevOps) + part-time Extension dev
+**Total Duration:** 12 weeks
+**Monthly Cost (at GA):** ~$1,250 for 100 users
+
 
 ## 📚 Open Questions (For Discussion)
 
@@ -1633,7 +2942,8 @@ a single extension settings update pushed to all 1,000 developers. Zero re-auth.
 
 **Q5:** Which AWS region(s) for EKS cluster?
 - Primary region: _______________
-- DR region (optional): _______________
+
+**Note:** Multi-region DR is out of scope for the current phase.
 
 **Q6:** What's your MSK cluster naming convention?
 - Example: `{environment}-kafka-{region}` or `kafka-{env}-{region}`
@@ -1757,7 +3067,7 @@ a single extension settings update pushed to all 1,000 developers. Zero re-auth.
 
 **Team Size:** 2 engineers (1 backend/MCP, 1 DevOps/extension)
 
-**Budget:** ~$940/month for 100 users (scales to $2,400/month for 1000 users)
+**Budget:** ~$1,250/month for 100 users (scales to ~$3,500/month for 1000 users)
 
 ---
 
@@ -1766,6 +3076,19 @@ a single extension settings update pushed to all 1,000 developers. Zero re-auth.
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Senior Architect | Initial architecture document |
+| 1.1 | 2026-02-13 | Senior Architect | **Production Hardening Update:** Circuit breaker, PodDisruptionBudget, NetworkPolicy, graceful shutdown, realistic cost estimates ($1,250/month), Critical Items checklist |
+| 1.2 | 2026-02-14 | Senior Architect | **MCP Native Auth Simplification:** mcp.json contains only server URLs (no tokens). Extension reduced to ~150 lines. |
+| 1.3 | 2026-02-14 | Senior Architect | **Auth Accuracy Update:** Clarified token caching pattern (keychain for persistence, memory for speed). Extension handles token refresh. Sign-in prompts immediately on install. |
+| 1.4 | 2026-02-14 | Senior Architect | **Transport Decision:** Streamable HTTP over SSE. Kafka operations are fast (<500ms), no need for persistent connections or streaming. Simpler, stateless, scales better. |
+| 1.5 | 2026-02-14 | Senior Architect | **End-to-End Request Flow:** Added comprehensive section with visual diagrams showing how requests flow from chat to response, multi-server routing examples (Kafka vs Database), and visual architecture summary. |
+| 1.6 | 2026-02-14 | Senior Architect | **mcp.json Reference:** Complete multi-environment configuration (dev, sit, uat, prod) for Kafka and Database with URL pattern breakdown and Copilot interaction examples. |
+| 1.7 | 2026-02-14 | Senior Architect | **JWKS JWT Validation:** Added detailed section explaining how Kong validates JWT using cached JWKS public keys (no per-request calls to PingFed). Includes RSA crypto explanation, Kong plugin config, and security boundary diagram. |
+| 1.8 | 2026-02-14 | Senior Architect | **Token Lifecycle:** Added detailed explanation of access token (1hr) vs refresh token (30 days), silent refresh flow, and 30-day inactive scenario with visual timeline. |
+| 1.9 | 2026-02-14 | Senior Architect | **Persona Q&A Refresh:** Updated Developer Q&A (removed CLI, added extension-based onboarding, Q12 on mcp.json auth). Added Architect Q6-Q9 (Kong vs AWS Gateway, Streamable HTTP, JWKS, Copilot routing). Updated Self-Service Onboarding flow to match new architecture. |
+| 2.0 | 2026-02-14 | Senior Architect | **Deployment over StatefulSet:** MCP servers are stateless — changed from StatefulSet to Deployment. Rewrote ADR-002 explaining why Deployment is correct (faster scaling, parallel rollouts) and why one Deployment per cluster (security isolation, independent scaling). Updated all K8s manifests and kubectl commands. |
+| 2.1 | 2026-02-14 | Senior Architect | **Critical Items Checklist Revised:** P0 now includes Kong JWKS config, AuthenticationProvider implementation, token storage pattern, mcp.json URL-only requirement. P1 adds silent refresh, 30-day re-sign-in, rate limiting. Staging gate criteria expanded. |
+| 2.2 | 2026-02-14 | Senior Architect | **Implementation Roadmap Revised:** Converted to tabular format with Owner assignments. Phase 1 now specifies JWKS config, AuthenticationProvider, Deployment manifests, integration tests. Phase 2 adds NetworkPolicy, PodDisruptionBudget, circuit breaker. Phase 3 adds security pen test, gradual rollout plan. Added timeline summary visual. |
+| 2.3 | 2026-02-14 | Senior Architect | **Project Checklist Aligned:** Updated API Gateway section to Kong only (not Nginx). Added JWKS TTL, circuit breaker, multi-environment routes (dev/sit/uat/prod). Token management now includes 30-day re-sign-in prompt with clear message. K8s Deployment section expanded with specific resource limits, probe configs, PDB, NetworkPolicy. Per-cluster deployments updated to match 4-environment model. |
 
 ---
 
@@ -1811,31 +3134,28 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
   - [ ] Exchange authorization code for tokens (POST to token endpoint)
   - [ ] State parameter for CSRF protection
 - [ ] **2.3 Token Management**
-  - [ ] Store tokens in `vscode.SecretStorage` (OS keychain)
-  - [ ] Background token refresh (every ~50 min with random jitter)
-  - [ ] Handle expired refresh tokens (prompt re-sign-in)
-  - [ ] Clear all tokens on sign-out
-- [ ] **2.4 mcp.json Auto-Management**
-  - [ ] Generate `~/.vscode/mcp.json` with all server entries + JWT header
-  - [ ] Merge with existing mcp.json (don't overwrite manual entries)
-  - [ ] Rewrite mcp.json silently on token refresh
-  - [ ] Regenerate mcp.json on VS Code restart (from keychain)
-  - [ ] Self-heal on accidental deletion/corruption
-- [ ] **2.5 Settings & Config Watcher**
-  - [ ] `mcpAuth.gatewayUrl` setting
-  - [ ] `mcpAuth.ssoUrl` setting
-  - [ ] `mcpAuth.clientId` setting
-  - [ ] `mcpAuth.servers` array (dynamic server list)
-  - [ ] Watch for settings changes → auto-update mcp.json
+  - [ ] Read tokens from keychain once at startup → cache in memory
+  - [ ] Return session from memory on `getSessions()` calls
+  - [ ] Refresh expired access token using refresh token (silent, no prompt)
+  - [ ] Update memory cache + keychain after refresh
+  - [ ] Prompt re-sign-in if refresh token expired (30-day inactive scenario)
+  - [ ] Clear message: "Your session has expired. Please sign in again."
+  - [ ] Clear all tokens on sign-out (`removeSession()`)
+- [ ] **2.4 mcp.json (Static URLs Only)**
+  - [ ] Document required mcp.json structure (URLs only, no tokens)
+  - [ ] Optional: Auto-generate from server discovery endpoint
+- [ ] **2.5 Settings & Config**
+  - [ ] `mcpAuth.ssoUrl` setting (PingFederate base URL)
+  - [ ] `mcpAuth.clientId` setting (OAuth client ID)
+  - [ ] `mcpAuth.scopes` setting (default: `openid profile email mcp-access`)
 - [ ] **2.6 UI**
   - [ ] Status bar item (connected/disconnected/reconnecting)
   - [ ] Sign-in notification with action button
   - [ ] Extension appears in VS Code Accounts menu
 - [ ] **2.7 Testing**
   - [ ] First-time sign-in flow works
-  - [ ] Token refresh works silently
+  - [ ] Token returned correctly when VS Code requests session
   - [ ] Sign-out clears everything
-  - [ ] New server added via settings → mcp.json updated, no re-auth
   - [ ] Works on macOS, Windows, Linux
   - [ ] No impact on existing extensions (Copilot, etc.)
 - [ ] **2.8 Distribution**
@@ -1856,15 +3176,19 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
   - [ ] Create `mcp-system` namespace
   - [ ] Configure node groups (auto-scaling)
   - [ ] Setup IRSA (IAM Roles for Service Accounts)
-- [ ] **3.3 API Gateway (Kong / Nginx)**
-  - [ ] Deploy Kong (or Nginx) in EKS
-  - [ ] Configure JWT validation plugin (JWKS caching)
-  - [ ] Configure rate limiting (per user)
+- [ ] **3.3 API Gateway (Kong on EKS)**
+  - [ ] Deploy Kong Ingress Controller in EKS
+  - [ ] Configure JWT validation plugin (JWKS caching, TTL 5 min)
+  - [ ] Point JWKS to PingFederate (`/pf/JWKS`)
+  - [ ] Configure rate limiting plugin (per user, based on `sub` claim)
+  - [ ] Configure circuit breaker plugin (trip at 50% error rate)
   - [ ] Configure audit logging
   - [ ] TLS termination (certificate from ACM)
-  - [ ] Route: `/kafka/dev` → `kafka-mcp-dev-service:8000`
-  - [ ] Route: `/kafka/staging` → `kafka-mcp-staging-service:8000`
-  - [ ] Route: `/kafka/prod` → `kafka-mcp-prod-service:8000`
+  - [ ] Route: `/kafka/dev/*` → `kafka-mcp-dev-service:8000`
+  - [ ] Route: `/kafka/sit/*` → `kafka-mcp-sit-service:8000`
+  - [ ] Route: `/kafka/uat/*` → `kafka-mcp-uat-service:8000`
+  - [ ] Route: `/kafka/prod/*` → `kafka-mcp-prod-service:8000`
+  - [ ] Route: `/database/dev/*` → `database-mcp-dev-service:8000` (Phase 3)
   - [ ] Strip path prefix (MCP server receives requests at `/`)
 - [ ] **3.4 ALB / Ingress**
   - [ ] Provision Application Load Balancer
@@ -1894,25 +3218,28 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
   - [ ] `topic_exists` — check if topic exists
   - [ ] `cluster_overview` — cluster health and metadata
 - [ ] **4.3 Transport**
-  - [ ] SSE transport working (VS Code `"type": "sse"`)
-  - [ ] Streamable HTTP support (VS Code `"type": "http"`) — future
+  - [ ] Streamable HTTP transport working (VS Code `"type": "http"`)
 - [ ] **4.4 Containerization**
   - [ ] Dockerfile (multi-stage build)
   - [ ] Health check endpoint (`/health`)
   - [ ] Non-root user in container
   - [ ] Image size optimized
 - [ ] **4.5 Kubernetes Deployment**
-  - [ ] Deployment manifest (or StatefulSet)
+  - [ ] Deployment manifest (Deployment, not StatefulSet — MCP is stateless)
   - [ ] Service (ClusterIP, port 8000)
-  - [ ] Resource limits (CPU, memory)
-  - [ ] Liveness + readiness probes
-  - [ ] HPA (Horizontal Pod Autoscaler)
+  - [ ] Resource limits (CPU: 500m-1000m, Memory: 256Mi-512Mi)
+  - [ ] Liveness probe (`/health`, initial delay 10s)
+  - [ ] Readiness probe (`/health`, initial delay 5s)
+  - [ ] HPA (min: 2, max: 10, CPU target: 70%)
+  - [ ] PodDisruptionBudget (`minAvailable: 1`)
+  - [ ] NetworkPolicy (egress only to assigned Kafka cluster)
 - [ ] **4.6 Per-Cluster Deployments**
-  - [ ] Kafka Dev MCP pod → connected to Dev MSK cluster
-  - [ ] Kafka Staging MCP pod → connected to Staging MSK cluster
-  - [ ] Kafka Prod MCP pod → connected to Prod MSK cluster
-  - [ ] Kafka Prod EU MCP pod → connected to EU MSK cluster (if applicable)
-  - [ ] Kafka Prod West MCP pod → connected to West MSK cluster (if applicable)
+  - [ ] `kafka-mcp-dev` Deployment → connected to Dev MSK cluster
+  - [ ] `kafka-mcp-sit` Deployment → connected to SIT MSK cluster
+  - [ ] `kafka-mcp-uat` Deployment → connected to UAT MSK cluster
+  - [ ] `kafka-mcp-prod` Deployment → connected to Prod MSK cluster (3 replicas)
+  - [ ] Each Deployment uses separate K8s Secret for cluster credentials
+  - [ ] NetworkPolicy ensures each Deployment can ONLY reach its assigned cluster
 - [ ] **4.7 Zero Auth Code**
   - [ ] Server has NO authentication code
   - [ ] Server receives pre-authenticated requests from gateway
@@ -2012,17 +3339,15 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
 ### 9. Testing & QA
 
 - [ ] **9.1 Unit Tests**
-  - [ ] VS Code extension: PKCE generation, JWT parsing, token lifecycle
+  - [ ] VS Code extension: PKCE generation, state validation, callback handling
   - [ ] MCP server: each tool function tested individually
 - [ ] **9.2 Integration Tests**
   - [ ] End-to-end: VS Code → Gateway → MCP Server → Kafka
-  - [ ] Auth flow: sign-in → token → tool call → result
-  - [ ] Token refresh: silent refresh updates mcp.json
-  - [ ] New server addition: settings change → mcp.json update
+  - [ ] Auth flow: install → sign-in prompt → session created → tool call → result
+  - [ ] Token refresh: expired token → silent refresh → request succeeds
 - [ ] **9.3 Load Testing**
   - [ ] 100 concurrent users simulated
   - [ ] 1,000 concurrent users simulated (target scale)
-  - [ ] Token refresh thundering herd test (jitter verified)
   - [ ] Gateway rate limiting validated under load
 - [ ] **9.4 Security Testing**
   - [ ] Expired token rejected by gateway
@@ -2063,16 +3388,16 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
 | Area | Items | Completed | Status |
 |------|-------|-----------|--------|
 | 1. PingFederate SSO | 3 main / 13 sub | 0 | 🔴 Not started |
-| 2. VS Code Extension | 8 main / 30 sub | 0 | 🔴 Not started |
-| 3. AWS Infrastructure | 5 main / 18 sub | 0 | 🔴 Not started |
-| 4. Kafka MCP Server | 7 main / 25 sub | 0 | 🔴 Not started |
+| 2. VS Code Extension | 8 main / 31 sub | 0 | 🔴 Not started |
+| 3. AWS Infrastructure | 5 main / 22 sub | 0 | 🔴 Not started |
+| 4. Kafka MCP Server | 7 main / 28 sub | 0 | 🔴 Not started |
 | 5. Amazon MSK | 3 main / 11 sub | 0 | 🔴 Not started |
 | 6. Monitoring | 3 main / 12 sub | 0 | 🔴 Not started |
 | 7. Security | 4 main / 13 sub | 0 | 🔴 Not started |
 | 8. Documentation | 4 main / 13 sub | 0 | 🔴 Not started |
 | 9. Testing | 4 main / 14 sub | 0 | 🔴 Not started |
 | 10. Rollout | 4 main / 13 sub | 0 | 🔴 Not started |
-| **TOTAL** | **45 main / 162 sub** | **0** | 🔴 **Not started** |
+| **TOTAL** | **45 main / 170 sub** | **0** | 🔴 **Not started** |
 
 Update this summary table as items are completed. Change status to:
 - 🟡 In progress (some items done)

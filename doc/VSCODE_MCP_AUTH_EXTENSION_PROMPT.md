@@ -1,8 +1,29 @@
 # Prompt: Build Generic MCP Auth Extension for Enterprise
 
 **Purpose:** Use this prompt with an AI coding agent (Claude, Copilot, Cursor, etc.) to build the VS Code extension.  
-**Target:** 100–1,000 developers accessing 3–5 Kafka clusters across multiple AWS regions  
-**Date:** February 12, 2026
+**Target:** 100–1,000 developers accessing Kafka clusters via MCP  
+**Last Updated:** February 14, 2026
+
+---
+
+## Document Overview
+
+This prompt provides everything needed to implement the VS Code authentication extension for remote MCP servers. It is aligned with the `REMOTE_MCP_ARCHITECTURE_GUIDE.md` decisions:
+
+| Decision | Value |
+|----------|-------|
+| **Transport** | Streamable HTTP (`type: "http"`) |
+| **Environments** | dev, sit, uat, prod |
+| **Token Storage** | OS Keychain (persistence) + Memory cache (speed) |
+| **Token Lifecycle** | Access: 1 hour, Refresh: 30 days |
+| **Extension Pattern** | `vscode.AuthenticationProvider` (~150 lines) |
+| **mcp.json** | URLs + Authorization header (auto-generated) |
+| **Gateway** | Kong on EKS (validates JWT via cached JWKS) |
+
+**Key Sections:**
+1. **The Prompt** — Copy-paste into AI coding agent
+2. **Expected Outcomes** — Success criteria for verification
+3. **Developer Implementation Checklist** — Day-by-day implementation guide
 
 ---
 
@@ -20,7 +41,7 @@ TARGET SCALE & DEPLOYMENT CONTEXT
 
   Developers:       100 – 1,000 (enterprise engineering organization)
   Primary workload: 3 – 5 Kafka clusters (Amazon MSK) across multiple AWS regions
-  Environments:     dev, staging, prod (each may have its own cluster)
+  Environments:     dev, sit, uat, prod
   Regions:          e.g., us-east-1, us-west-2, eu-west-1
   MCP servers:      Kafka MCP (primary), with future expansion to
                     Database, Redis, S3, Elasticsearch, etc.
@@ -34,7 +55,7 @@ TARGET SCALE & DEPLOYMENT CONTEXT
   - mcp.json updates are local-only (no server roundtrip per developer)
   - Gateway URL supports regional routing if needed
   - Multiple Kafka clusters appear as separate MCP server entries
-    (e.g., kafka-dev, kafka-staging, kafka-prod, kafka-eu)
+    (e.g., kafka-dev, kafka-sit, kafka-uat, kafka-prod)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -273,6 +294,32 @@ VS CODE APIs TO USE
    - Windows: Credential Manager
    - Linux: libsecret / GNOME Keyring
 
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │  TWO-TIER TOKEN STORAGE PATTERN (CRITICAL)                        │
+   │                                                                     │
+   │  ❌ WRONG: Read from keychain on every getSessions() call          │
+   │     → Slow (disk I/O), may prompt for keychain password            │
+   │                                                                     │
+   │  ✅ CORRECT: Two-tier caching                                       │
+   │                                                                     │
+   │  Tier 1: OS Keychain (persistence)                                 │
+   │     → Written on sign-in and token refresh                         │
+   │     → Survives VS Code restart, machine reboot                     │
+   │     → Read ONCE at extension activation                            │
+   │                                                                     │
+   │  Tier 2: Memory cache (speed)                                      │
+   │     → All getSessions() calls read from memory (~0ms)              │
+   │     → Updated on sign-in, refresh, sign-out                        │
+   │     → Lost on VS Code restart (repopulated from keychain)          │
+   │                                                                     │
+   │  Flow:                                                              │
+   │  1. Extension activates → read keychain → cache in memory          │
+   │  2. getSessions() called → return from MEMORY (instant)            │
+   │  3. Token refresh → update BOTH memory + keychain                  │
+   │  4. Sign out → clear BOTH memory + keychain                        │
+   │  5. VS Code restart → repeat step 1                                │
+   └─────────────────────────────────────────────────────────────────────┘
+
 3. vscode.env.openExternal(uri)
    - Opens default browser for SSO login
    - Same API that GitHub Copilot uses
@@ -315,13 +362,12 @@ EXTENSION SETTINGS (package.json → contributes.configuration)
 
 "mcpAuth.servers": {
   "type": "array",
-  "description": "MCP servers behind the gateway. All share the same auth token. Each Kafka cluster (dev, staging, prod, regional) is a separate entry. Add new entries here — developers get immediate access with zero re-auth.",
+  "description": "MCP servers behind the gateway. All share the same auth token. Each Kafka cluster (dev, sit, uat, prod) is a separate entry. Add new entries here — developers get immediate access with zero re-auth.",
   "default": [
-    { "name": "kafka-dev",      "path": "/kafka/dev",      "label": "Kafka Dev (us-east-1)" },
-    { "name": "kafka-staging",  "path": "/kafka/staging",  "label": "Kafka Staging (us-east-1)" },
-    { "name": "kafka-prod",     "path": "/kafka/prod",     "label": "Kafka Prod (us-east-1)" },
-    { "name": "kafka-prod-eu",  "path": "/kafka/prod-eu",  "label": "Kafka Prod (eu-west-1)" },
-    { "name": "kafka-prod-west","path": "/kafka/prod-west","label": "Kafka Prod (us-west-2)" }
+    { "name": "kafka-dev",  "path": "/kafka/dev",  "label": "Kafka Dev" },
+    { "name": "kafka-sit",  "path": "/kafka/sit",  "label": "Kafka SIT" },
+    { "name": "kafka-uat",  "path": "/kafka/uat",  "label": "Kafka UAT" },
+    { "name": "kafka-prod", "path": "/kafka/prod", "label": "Kafka Prod" }
   ],
   "items": {
     "type": "object",
@@ -573,11 +619,10 @@ STEP 6: Generate .vscode/mcp.json for all MCP servers
   │  │                                                              │  │
   │  │  Built-in MCP Client (reads mcp.json, manages connections)  │  │
   │  │  ┌────────────────────────────────────────────────────────┐  │  │
-  │  │  │ SSE Connection → kafka-dev      (🟢 connected)        │  │  │
-  │  │  │ SSE Connection → kafka-staging  (🟢 connected)        │  │  │
-  │  │  │ SSE Connection → kafka-prod     (🟢 connected)        │  │  │
-  │  │  │ SSE Connection → kafka-prod-eu  (🟢 connected)        │  │  │
-  │  │  │ SSE Connection → kafka-prod-west(🟢 connected)        │  │  │
+  │  │  │ HTTP Connection → kafka-dev      (🟢 connected)        │  │  │
+  │  │  │ HTTP Connection → kafka-sit      (🟢 connected)        │  │  │
+  │  │  │ HTTP Connection → kafka-uat      (🟢 connected)        │  │  │
+  │  │  │ HTTP Connection → kafka-prod     (🟢 connected)        │  │  │
   │  │  └────────────────────────────────────────────────────────┘  │  │
   │  │                                                              │  │
   │  │  Our Auth Extension (writes mcp.json, manages tokens)       │  │
@@ -594,10 +639,9 @@ STEP 6: Generate .vscode/mcp.json for all MCP servers
   │  │ {                                                            │  │
   │  │   "servers": {                                               │  │
   │  │     "kafka-dev":       { url, headers: {Authorization} },   │  │
-  │  │     "kafka-staging":   { url, headers: {Authorization} },   │  │
-  │  │     "kafka-prod":      { url, headers: {Authorization} },   │  │
-  │  │     "kafka-prod-eu":   { url, headers: {Authorization} },   │  │
-  │  │     "kafka-prod-west": { url, headers: {Authorization} }    │  │
+  │  │     "kafka-sit":       { url, headers: {Authorization} },   │  │
+  │  │     "kafka-uat":       { url, headers: {Authorization} },   │  │
+  │  │     "kafka-prod":      { url, headers: {Authorization} }    │  │
   │  │   }                                                          │  │
   │  │ }                                                            │  │
   │  └──────────────────────────────────────────────────────────────┘  │
@@ -627,24 +671,25 @@ STEP 6: Generate .vscode/mcp.json for all MCP servers
 
   HOW VS CODE USES mcp.json WITH THE MCP TRANSPORT:
 
-    When mcp.json has type "sse" (our default):
-      1. VS Code opens HTTPS GET request to URL (persistent SSE connection)
-      2. Sends Authorization: Bearer <JWT> header on the GET request
-      3. MCP server responds with SSE event stream (keeps connection open)
-      4. Server pushes capabilities + tool list over the stream
-      5. When developer calls a tool, VS Code sends POST to /message
-         with the same Authorization header
-      6. Server responds with result over the SSE stream
-
-    When mcp.json has type "http" (Streamable HTTP, future upgrade):
+    When mcp.json has type "http" (Streamable HTTP — our choice):
       1. VS Code sends HTTPS POST to URL with tool call body
       2. Sends Authorization: Bearer <JWT> header on every POST
       3. Server responds with JSON body (or SSE stream for streaming)
       4. No persistent connection — pure request/response
+      5. Stateless, works perfectly with K8s HPA and load balancers
 
-    In BOTH cases: the Authorization header from mcp.json is sent
-    automatically by VS Code's built-in MCP client. Our extension
-    just needs to keep that header value current.
+    When mcp.json has type "sse":
+      1. VS Code opens HTTPS GET request to URL (persistent SSE connection)
+      2. Sends Authorization: Bearer <JWT> header on the GET request
+      3. MCP server responds with SSE event stream (keeps connection open)
+      4. Server pushes capabilities + tool list over the stream
+      5. Requires connection state management, harder to scale
+
+    ✅ We use "http" (Streamable HTTP) because:
+       - Kafka operations are fast (<500ms) — no streaming needed
+       - Stateless = works with K8s Deployment + HPA
+       - Kong can route any request to any pod (no sticky sessions)
+       - Simpler debugging (standard HTTP request/response)
 
   KEY INSIGHT: The token appears in TWO places on the developer's laptop:
     1. OS Keychain (SecretStorage) — source of truth, encrypted
@@ -697,25 +742,27 @@ STEP 6: Generate .vscode/mcp.json for all MCP servers
     │ "sse"     Remote. VS Code opens persistent SSE (Server-Sent    │
     │           Events) connection over HTTPS. Server pushes events  │
     │           down the stream. Client sends tool calls via POST.   │
-    │           Supported in VS Code 1.96+. Proven, widely used.     │
+    │           Requires persistent connections, harder to scale.    │
     │                                                                  │
     │ "http"    Remote. Streamable HTTP (MCP spec 2025+). Standard   │
     │           POST requests. Server responds with JSON or optional │
-    │           SSE stream for long-running ops. Simpler, no          │
-    │           persistent connection. Better for serverless/Lambda.  │
+    │           SSE stream for long-running ops. Simpler, stateless, │
+    │           scales better with Kubernetes HPA. Our choice.       │
     │                                                                  │
-    │ We use "sse" in mcp.json (maximum VS Code compatibility).      │
-    │ Upgrade to "http" later via a single settings push — zero      │
-    │ re-auth, zero developer action.                                │
+    │ ✅ We use "http" (Streamable HTTP) in mcp.json:                │
+    │    - Kafka operations are fast (<500ms) — no streaming needed │
+    │    - Stateless — works with K8s HPA and load balancers        │
+    │    - Simpler debugging (standard HTTP request/response)        │
+    │    - No connection state to manage                              │
     └──────────────────────────────────────────────────────────────────┘
 
     const mcpConfig = { servers: {} }
     
     for (const server of servers) {
       mcpConfig.servers[server.name] = {
-        // "sse" = SSE transport (proven, all VS Code MCP versions)
-        // Change to "http" for Streamable HTTP when ready
-        type: "sse",
+        // "http" = Streamable HTTP transport (stateless, scalable)
+        // Kafka operations are fast (<500ms), no streaming needed
+        type: "http",
         url: `${gatewayUrl}${server.path}`,
         headers: {
           "Authorization": `Bearer ${accessToken}`
@@ -723,38 +770,39 @@ STEP 6: Generate .vscode/mcp.json for all MCP servers
       }
     }
 
-    // Result (example with 5 Kafka clusters across 3 AWS regions):
+    // Result (example with 4 Kafka environments):
     {
       "servers": {
         "kafka-dev": {
-          "type": "sse",
+          "type": "http",
           "url": "https://mcp.company.com/kafka/dev",
           "headers": {
             "Authorization": "Bearer eyJhbGci..."
           }
         },
-        "kafka-staging": {
-          "type": "sse",
-          "url": "https://mcp.company.com/kafka/staging",
+        "kafka-sit": {
+          "type": "http",
+          "url": "https://mcp.company.com/kafka/sit",
+          "headers": {
+            "Authorization": "Bearer eyJhbGci..."
+          }
+        },
+        "kafka-uat": {
+          "type": "http",
+          "url": "https://mcp.company.com/kafka/uat",
           "headers": {
             "Authorization": "Bearer eyJhbGci..."
           }
         },
         "kafka-prod": {
-          "type": "sse",
+          "type": "http",
           "url": "https://mcp.company.com/kafka/prod",
           "headers": {
             "Authorization": "Bearer eyJhbGci..."
           }
-        },
-        "kafka-prod-eu": {
-          "type": "sse",
-          "url": "https://mcp.company.com/kafka/prod-eu",
-          "headers": {
-            "Authorization": "Bearer eyJhbGci..."
-          }
-        },
-        "kafka-prod-west": {
+        }
+      }
+    }
           "type": "sse",
           "url": "https://mcp.company.com/kafka/prod-west",
           "headers": {
@@ -827,7 +875,7 @@ STEP 8: Watch settings for new MCP servers
     })
 
   → When admin pushes new server to settings (e.g., via Settings Sync):
-    Before: ["kafka-dev", "kafka-staging", "kafka-prod", "kafka-prod-eu", "kafka-prod-west"]
+    Before: ["kafka-dev", "kafka-sit", "kafka-uat", "kafka-prod"]
     After:  [...same..., "kafka-analytics"]  ← new cluster added
 
     Extension detects change → adds kafka-analytics to mcp.json with current token
@@ -977,13 +1025,12 @@ PACKAGE.JSON (COMPLETE)
         },
         "mcpAuth.servers": {
           "type": "array",
-          "description": "MCP servers behind the API gateway. All share the same auth token. Each Kafka cluster (dev, staging, prod, regional) is a separate entry. Add entries here and developers get immediate access — no re-authentication.",
+          "description": "MCP servers behind the API gateway. All share the same auth token. Each Kafka cluster (dev, sit, uat, prod) is a separate entry. Add entries here and developers get immediate access — no re-authentication.",
           "default": [
-            { "name": "kafka-dev", "path": "/kafka/dev", "label": "Kafka Dev (us-east-1)" },
-            { "name": "kafka-staging", "path": "/kafka/staging", "label": "Kafka Staging (us-east-1)" },
-            { "name": "kafka-prod", "path": "/kafka/prod", "label": "Kafka Prod (us-east-1)" },
-            { "name": "kafka-prod-eu", "path": "/kafka/prod-eu", "label": "Kafka Prod (eu-west-1)" },
-            { "name": "kafka-prod-west", "path": "/kafka/prod-west", "label": "Kafka Prod (us-west-2)" }
+            { "name": "kafka-dev",  "path": "/kafka/dev",  "label": "Kafka Dev" },
+            { "name": "kafka-sit",  "path": "/kafka/sit",  "label": "Kafka SIT" },
+            { "name": "kafka-uat",  "path": "/kafka/uat",  "label": "Kafka UAT" },
+            { "name": "kafka-prod", "path": "/kafka/prod", "label": "Kafka Prod" }
           ],
           "items": {
             "type": "object",
@@ -1652,12 +1699,11 @@ User Experience:
 [ ] No impact on GitHub Copilot, other extensions, or settings
 [ ] Status bar click shows quick pick with options
 
-Scale (100–1,000 developers, 3–5 Kafka clusters):
+Scale (100–1,000 developers, 4 Kafka environments):
 [ ] Token refresh jitter: 1,000 developers don't all refresh at the same second
-[ ] 5 Kafka cluster entries generated correctly in mcp.json
-[ ] Adding a 6th cluster → mcp.json updated, no re-auth
-[ ] Multiple AWS regions reflected in server labels and paths
-[ ] Extension activates quickly with 5+ server entries
+[ ] 4 Kafka environment entries generated correctly in mcp.json
+[ ] Adding a 5th environment → mcp.json updated, no re-auth
+[ ] Extension activates quickly with 4+ server entries
 [ ] PingFederate handles concurrent auth from 100+ developers
 
 Security:
@@ -1666,7 +1712,171 @@ Security:
 [ ] Callback server binds to 127.0.0.1 only
 [ ] PKCE code_verifier is unique per auth attempt
 [ ] State parameter is unique per auth attempt
+
+30-Day Inactive Scenario:
+[ ] After 30 days of inactivity, refresh token is invalid (expected)
+[ ] Extension shows clear message: "Your session has expired. Please sign in again."
+[ ] Click "Sign In" → browser opens → SSO → done in 30 seconds
+[ ] Previous tokens cleared before new sign-in
 ```
+
+---
+
+## ✅ Expected Outcomes & Success Criteria
+
+After implementing this extension, the following outcomes MUST be achieved:
+
+### Developer Experience (100% of these must pass)
+
+| Scenario | Expected Outcome |
+|----------|------------------|
+| **First Install** | Install extension → "Sign in to Company MCP" notification appears within 5 seconds |
+| **First Sign-In** | Click "Sign In" → browser opens PingFederate → SSO login → "Connected" status in VS Code. Total time: < 60 seconds |
+| **Daily Use** | Open VS Code → tokens loaded from keychain → tool calls work immediately. Zero interaction required |
+| **Token Refresh** | Every ~50 minutes, token refreshes silently. Developer sees nothing, no interruption |
+| **30-Day Return** | After 30+ days inactive → "Session expired. Please sign in again." → one-click re-auth (30 seconds) |
+| **New MCP Server** | Admin pushes new server to settings → appears in mcp.json automatically → no re-auth needed |
+| **Sign Out** | Run "MCP Auth: Sign Out" → all tokens cleared → status shows "Sign in required" |
+
+### Technical Metrics (Verify in Tests)
+
+| Metric | Target |
+|--------|--------|
+| Extension activation time | < 500ms (no blocking I/O on activation) |
+| Token refresh latency | < 2 seconds (including PingFederate roundtrip) |
+| mcp.json generation time | < 100ms (local file write only) |
+| Memory footprint | < 10MB (tokens in memory + minimal state) |
+| Lines of code | ~150-200 lines for AuthenticationProvider |
+
+### Integration Verification
+
+| Integration | How to Verify |
+|-------------|---------------|
+| VS Code Accounts menu | Extension appears under avatar icon (bottom-left) |
+| Copilot Chat | "List topics on kafka-dev" returns result from MCP server |
+| Kong Gateway | Request reaches MCP server with `X-User-Email` header |
+| PingFederate | JWKS endpoint accessible, JWT validates correctly |
+| OS Keychain | Token visible in Keychain Access (macOS) / Credential Manager (Windows) |
+
+---
+
+## 📋 Developer Implementation Checklist
+
+Use this checklist to track implementation progress. Mark `[x]` when complete.
+
+### Phase 1: Project Setup (Day 1)
+
+- [ ] Create TypeScript VS Code extension project (`yo code`)
+- [ ] Configure `package.json` with authentication contribution point
+- [ ] Set up build pipeline (`npm run compile`, `npm run watch`)
+- [ ] Create project structure (auth/, config/, ui/, utils/)
+- [ ] Set up test framework (`npm run test`)
+
+### Phase 2: Authentication Core (Days 2-3)
+
+- [ ] **Implement AuthenticationProvider interface (~150 lines)**
+  - [ ] `getSessions()`: Read token from memory cache, fallback to keychain
+  - [ ] `createSession()`: Trigger OAuth PKCE flow
+  - [ ] `removeSession()`: Clear tokens from keychain + memory
+  - [ ] Fire `onDidChangeSessions` event on state changes
+
+- [ ] **PKCE Implementation**
+  - [ ] Generate `code_verifier` (43 chars, URL-safe base64)
+  - [ ] Generate `code_challenge` (SHA-256 hash of verifier, base64url encoded)
+  - [ ] Generate `state` parameter (16 bytes hex)
+
+- [ ] **OAuth Callback Server**
+  - [ ] Create temporary HTTP server on 127.0.0.1 (random port)
+  - [ ] Parse callback: extract `code` and `state` params
+  - [ ] Verify `state` matches (CSRF protection)
+  - [ ] Return success HTML page with auto-close
+  - [ ] 5-minute timeout, auto-close on success
+
+- [ ] **Token Exchange**
+  - [ ] POST to PingFederate token endpoint
+  - [ ] Include `code_verifier` (PKCE proof)
+  - [ ] Parse response: `access_token`, `refresh_token`, `expires_in`
+
+### Phase 3: Token Management (Day 4)
+
+- [ ] **Two-Tier Token Storage**
+  - [ ] Store tokens in OS keychain via `context.secrets` (persistence)
+  - [ ] Cache tokens in memory (speed, ~0ms reads)
+  - [ ] On startup: read keychain → cache in memory
+  - [ ] On refresh: update memory + keychain
+
+- [ ] **Token Refresh Logic**
+  - [ ] Start background timer (50 min default + random jitter 0-60s)
+  - [ ] Check if token expires within 10 minutes
+  - [ ] If expiring: POST to token endpoint with `refresh_token`
+  - [ ] On success: update memory + keychain + mcp.json
+  - [ ] On failure (401): clear tokens, show "Session expired" message
+
+- [ ] **30-Day Scenario**
+  - [ ] Detect 401 on refresh (refresh token expired)
+  - [ ] Show notification: "Your session has expired. Please sign in again."
+  - [ ] Clear all old tokens before new sign-in
+
+### Phase 4: mcp.json Generation (Day 5)
+
+- [ ] **Build mcp.json Content**
+  - [ ] Read server list from settings (`mcpAuth.servers`)
+  - [ ] For each server: create entry with `type: "http"`, URL, Authorization header
+  - [ ] Read token from MEMORY (not keychain on every write)
+
+- [ ] **File Management**
+  - [ ] Determine path: user-level (`~/.vscode/mcp.json`) or workspace-level
+  - [ ] Merge with existing entries (preserve manual entries)
+  - [ ] Write atomically (temp file + rename)
+
+- [ ] **Lifecycle Events**
+  - [ ] On sign-in: generate mcp.json
+  - [ ] On token refresh: update Authorization header
+  - [ ] On sign-out: remove Authorization headers (keep server entries)
+  - [ ] On settings change: regenerate mcp.json
+
+### Phase 5: UI & User Experience (Day 6)
+
+- [ ] **Status Bar**
+  - [ ] Show connected state: `✅ MCP: user@company.com`
+  - [ ] Show disconnected state: `🔴 MCP: Sign in required` (clickable)
+  - [ ] Show reconnecting state: `🔄 MCP: Reconnecting...`
+
+- [ ] **Notifications**
+  - [ ] First-time prompt: "Sign in to Company MCP" with [Sign In] button
+  - [ ] Success: "Connected to Company MCP (4 servers available)"
+  - [ ] Session expired: "Your session has expired. Please sign in again."
+
+- [ ] **Commands**
+  - [ ] `mcp-auth.signIn`: Trigger sign-in flow
+  - [ ] `mcp-auth.signOut`: Clear all tokens
+  - [ ] `mcp-auth.status`: Show quick pick with status info
+
+### Phase 6: Testing (Days 7-8)
+
+- [ ] **Unit Tests**
+  - [ ] PKCE generation produces correct format
+  - [ ] State parameter is unique per call
+  - [ ] JWT payload parsing extracts email, exp, etc.
+
+- [ ] **Integration Tests**
+  - [ ] Mock PingFederate responses
+  - [ ] Full sign-in flow completes successfully
+  - [ ] Token refresh updates mcp.json
+  - [ ] Sign-out clears all state
+
+- [ ] **Manual Testing**
+  - [ ] Test on macOS, Windows, Linux
+  - [ ] Verify Keychain Access / Credential Manager entries
+  - [ ] Verify Copilot Chat can call MCP tools
+
+### Phase 7: Documentation & Package (Day 9)
+
+- [ ] Write README.md (installation, usage, troubleshooting)
+- [ ] Create CHANGELOG.md
+- [ ] Package extension: `vsce package` → `.vsix` file
+- [ ] Test installation from `.vsix`
+- [ ] Publish to internal Marketplace (or distribute `.vsix`)
 
 ---
 
