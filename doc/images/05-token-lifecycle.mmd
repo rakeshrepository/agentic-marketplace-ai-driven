@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> NoToken: Install
+    NoToken --> SigningIn: Click Sign In
+    SigningIn --> HasToken: SSO Complete
+    HasToken --> Refreshing: Every 50min
+    Refreshing --> HasToken: Silent refresh
+    HasToken --> Expired: 30 days inactive
+    Expired --> SigningIn: Re-authenticate
+    HasToken --> NoToken: Sign out

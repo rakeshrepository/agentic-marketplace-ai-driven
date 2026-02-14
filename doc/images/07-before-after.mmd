@@ -1,0 +1,12 @@
+flowchart LR
+    subgraph Before[Before: Manual Kafka Access]
+        B1[SSH to bastion] --> B2[Run kafka-topics.sh]
+        B2 --> B3[Copy credentials]
+        B3 --> B4[Parse output]
+        B4 --> B5[5-10 minutes]
+    end
+    
+    subgraph After[After: MCP in VS Code]
+        A1[Ask Copilot] --> A2[Get answer]
+        A2 --> A3[10 seconds]
+    end

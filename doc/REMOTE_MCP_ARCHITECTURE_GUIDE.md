@@ -50,6 +50,135 @@ Developer's Laptop (VS Code)
 
 ---
 
+## 📐 Architecture Diagrams
+
+This section provides visual diagrams for different stakeholders. Each diagram serves a specific purpose:
+
+| Diagram | Primary Audience | Purpose |
+|---------|-----------------|---------|
+| [AWS Infrastructure](#1-aws-infrastructure-topology) | Architect, DevOps | VPC layout, EKS, MSK, network boundaries |
+| [Security Boundaries](#2-security-boundary-diagram) | Architect, Security | Auth flow, JWT validation, trust zones |
+| [Request Flow](#3-end-to-end-request-flow) | Developer, Architect | Message path from chat to Kafka |
+| [Extension Components](#4-vs-code-extension-architecture) | Developer | AuthProvider, TokenManager, internal structure |
+| [Token Lifecycle](#5-token-lifecycle-diagram) | Developer, Architect | Access/refresh tokens, 30-day scenario |
+| [User Journey](#6-user-journey-map) | Product Owner, Manager | Developer experience from install to daily use |
+
+---
+
+### 1. AWS Infrastructure Topology
+
+**Audience:** Senior Architect, DevOps, Security  
+**Purpose:** Shows VPC structure, network isolation, and component placement
+
+![AWS Infrastructure Topology](images/01-aws-infra.png)
+
+**Key Points:**
+- ALB terminates TLS, forwards HTTP to Kong
+- Kong validates JWT using cached JWKS (no per-request SSO calls)
+- Each MCP Deployment can ONLY reach its assigned MSK cluster (NetworkPolicy)
+- MSK clusters in separate subnet, not directly accessible from internet
+
+---
+
+### 2. Security Boundary Diagram
+
+**Audience:** Senior Architect, Security Team  
+**Purpose:** Shows trust zones, authentication boundaries, and where validation occurs
+
+![Security Boundary Diagram](images/02-security.png)
+
+**Security Model:**
+1. **All auth happens at Kong** — single point of control
+2. **MCP servers have NO auth code** — cannot be bypassed
+3. **JWKS cached** — PingFederate outage doesn't break existing sessions
+4. **JWT stripped before MCP** — servers never see tokens
+
+---
+
+### 3. End-to-End Request Flow
+
+**Audience:** Developer, Architect  
+**Purpose:** Shows the complete message path with timing
+
+![End-to-End Request Flow](images/03-request-flow.png)
+
+**Timing Breakdown:**
+| Step | Duration |
+|------|----------|
+| Intent recognition | ~50ms |
+| Token from memory | ~0ms |
+| TLS + network | ~20ms |
+| Kong JWT validation | ~1ms |
+| MCP processing | ~10ms |
+| Kafka operation | ~100-300ms |
+| **Total** | **~200-400ms** |
+
+---
+
+### 4. VS Code Extension Architecture
+
+**Audience:** Developer (Extension Team)  
+**Purpose:** Shows internal components and data flow
+
+![VS Code Extension Architecture](images/04-extension.png)
+
+**Component Responsibilities:**
+| Component | Lines of Code | Responsibility |
+|-----------|---------------|----------------|
+| AuthenticationProvider | ~150 | VS Code auth API integration |
+| TokenManager | ~80 | Token storage, refresh, lifecycle |
+| McpConfigManager | ~50 | mcp.json generation |
+| StatusBar | ~30 | UI feedback |
+| **Total** | **~310** | Complete extension |
+
+---
+
+### 5. Token Lifecycle Diagram
+
+**Audience:** Developer, Architect  
+**Purpose:** Shows token states, refresh timing, and 30-day scenario
+
+![Token Lifecycle State Diagram](images/05-token-lifecycle.png)
+
+**Timeline View:**
+
+![Token Lifecycle Timeline](images/05b-token-timeline.png)
+
+**Scenarios:**
+
+| Scenario | What Happens | User Action |
+|----------|--------------|-------------|
+| **Normal use** | Token refreshes every ~50 min | None (silent) |
+| **VS Code restart** | Token loaded from keychain | None (automatic) |
+| **Machine reboot** | Token loaded from keychain | None (automatic) |
+| **30-day inactive** | Refresh token expired | One-click sign-in (~30 sec) |
+| **Sign out** | All tokens cleared | Sign in when needed |
+
+---
+
+### 6. User Journey Map
+
+**Audience:** Product Owner, Manager  
+**Purpose:** Shows developer experience from install to daily use
+
+![User Journey Map](images/06-user-journey.png)
+
+**User Experience Metrics:**
+
+| Stage | Time | Friction Level |
+|-------|------|----------------|
+| **Install** | ~30 sec | ⭐ Very Low |
+| **First Sign-In** | ~60 sec | ⭐⭐ Low |
+| **Daily Use** | 0 sec | ⭐ None |
+| **Token Refresh** | 0 sec | ⭐ None (silent) |
+| **30-Day Return** | ~30 sec | ⭐⭐ Low |
+
+**Comparison: Before vs After MCP**
+
+![Before vs After Comparison](images/07-before-after.png)
+
+---
+
 ## 🏗️ High-Level Architecture
 
 ### Centralized Auth Pattern: One Extension, One Gateway, Many MCP Servers
@@ -3089,6 +3218,7 @@ Week 1-2    Week 3-4    Week 5-6    Week 7-8    Week 9-10   Week 11-12
 | 2.1 | 2026-02-14 | Senior Architect | **Critical Items Checklist Revised:** P0 now includes Kong JWKS config, AuthenticationProvider implementation, token storage pattern, mcp.json URL-only requirement. P1 adds silent refresh, 30-day re-sign-in, rate limiting. Staging gate criteria expanded. |
 | 2.2 | 2026-02-14 | Senior Architect | **Implementation Roadmap Revised:** Converted to tabular format with Owner assignments. Phase 1 now specifies JWKS config, AuthenticationProvider, Deployment manifests, integration tests. Phase 2 adds NetworkPolicy, PodDisruptionBudget, circuit breaker. Phase 3 adds security pen test, gradual rollout plan. Added timeline summary visual. |
 | 2.3 | 2026-02-14 | Senior Architect | **Project Checklist Aligned:** Updated API Gateway section to Kong only (not Nginx). Added JWKS TTL, circuit breaker, multi-environment routes (dev/sit/uat/prod). Token management now includes 30-day re-sign-in prompt with clear message. K8s Deployment section expanded with specific resource limits, probe configs, PDB, NetworkPolicy. Per-cluster deployments updated to match 4-environment model. |
+| 2.4 | 2026-02-14 | Senior Architect | **Architecture Diagrams Added:** Added 6 Mermaid diagrams for different stakeholders: (1) AWS Infrastructure Topology showing VPC, EKS, MSK, Kong placement; (2) Security Boundary diagram with trust zones; (3) End-to-End Request Flow sequence diagram with timing; (4) VS Code Extension Component diagram showing two-tier storage; (5) Token Lifecycle state diagram with 30-day scenario; (6) User Journey Map comparing before/after experience. |
 
 ---
 

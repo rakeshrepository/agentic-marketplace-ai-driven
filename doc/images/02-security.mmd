@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph Untrusted[Zone 1: Untrusted]
+        VS[VS Code]
+    end
+    subgraph DMZ[Zone 2: DMZ]
+        ALB[ALB]
+    end
+    subgraph Trusted[Zone 3: Trusted]
+        KONG[Kong Gateway JWT]
+        MCP[MCP Server]
+        MSK[(Kafka)]
+    end
+    subgraph Identity[Zone 4: Identity]
+        PING[PingFederate]
+    end
+    VS -->|Bearer JWT| ALB --> KONG
+    KONG -->|X-User-Email| MCP --> MSK
+    KONG -.->|JWKS| PING

@@ -1,0 +1,15 @@
+flowchart LR
+    subgraph Install
+        I1[Find Extension] --> I2[Install]
+    end
+    subgraph SignIn[First Sign-In]
+        S1[Click Sign In] --> S2[SSO Browser] --> S3[Connected]
+    end
+    subgraph Daily[Daily Use]
+        D1[Open VS Code] --> D2[Ask Copilot] --> D3[Get Results]
+    end
+    subgraph Return[After 30 Days]
+        R1[Session Expired] --> R2[Quick Sign In] --> R3[Back to Work]
+    end
+    Install --> SignIn --> Daily
+    Daily -.->|vacation| Return

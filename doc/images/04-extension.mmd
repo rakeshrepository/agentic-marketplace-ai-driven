@@ -1,0 +1,21 @@
+flowchart TB
+    subgraph Ext[VS Code Extension]
+        AP[AuthProvider]
+        TM[TokenManager]
+        MCM[McpConfigManager]
+        subgraph Storage
+            MEM[Memory Cache]
+            KC[OS Keychain]
+        end
+        SB[StatusBar]
+        MJ[mcp.json]
+    end
+    PING[PingFederate]
+    VSMCP[VS Code MCP Client]
+    AP --> TM
+    TM --> MEM
+    TM --> KC
+    TM -.-> PING
+    AP --> MCM --> MJ
+    MJ --> VSMCP
+    KC -->|startup| MEM

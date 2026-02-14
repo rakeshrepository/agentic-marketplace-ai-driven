@@ -1,0 +1,31 @@
+flowchart TB
+    subgraph Internet
+        DEV[Developer VS Code]
+    end
+    subgraph AWS[AWS Region]
+        subgraph VPC
+            ALB[Load Balancer]
+            subgraph EKS[EKS Cluster]
+                KONG[Kong Gateway]
+                MCP_DEV[kafka-mcp-dev]
+                MCP_SIT[kafka-mcp-sit]
+                MCP_UAT[kafka-mcp-uat]
+                MCP_PROD[kafka-mcp-prod]
+            end
+            subgraph MSK[MSK Clusters]
+                K_DEV[(MSK Dev)]
+                K_SIT[(MSK SIT)]
+                K_UAT[(MSK UAT)]
+                K_PROD[(MSK Prod)]
+            end
+        end
+    end
+    subgraph Corp[Corporate]
+        PING[PingFederate]
+    end
+    DEV --> ALB --> KONG
+    KONG --> MCP_DEV --> K_DEV
+    KONG --> MCP_SIT --> K_SIT
+    KONG --> MCP_UAT --> K_UAT
+    KONG --> MCP_PROD --> K_PROD
+    KONG -.->|JWKS| PING

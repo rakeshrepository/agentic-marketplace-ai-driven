@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant Dev as Developer
+    participant Chat as Copilot Chat
+    participant Ext as MCP Auth Extension
+    participant Kong as Kong Gateway
+    participant MCP as MCP Server
+    participant Kafka as Amazon MSK
+    Dev->>Chat: List all topics on prod
+    Chat->>Ext: Get auth session
+    Ext-->>Chat: Bearer eyJhbGci...
+    Chat->>Kong: POST /kafka/prod/mcp
+    Note over Kong: JWT Validation
+    Kong->>MCP: X-User-Email header
+    MCP->>Kafka: list_topics()
+    Kafka-->>MCP: [orders, payments, users]
+    MCP-->>Kong: response
+    Kong-->>Chat: 200 OK
+    Chat-->>Dev: Found 3 topics

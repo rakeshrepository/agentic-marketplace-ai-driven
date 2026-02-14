@@ -1,0 +1,15 @@
+gantt
+    title Token Lifecycle Timeline
+    dateFormat HH:mm
+    axisFormat %H:%M
+
+    section Day 1
+    Sign in (get tokens)           :milestone, m1, 09:00, 0m
+    Access Token Valid             :active, a1, 09:00, 60m
+    Silent Refresh #1              :milestone, r1, 09:50, 0m
+    Access Token Valid             :active, a2, 09:50, 60m
+    Silent Refresh #2              :milestone, r2, 10:40, 0m
+    
+    section Day 30 (Inactive)
+    Refresh Token Expires          :crit, exp, 09:00, 1m
+    Re-sign-in Required            :milestone, m2, 09:01, 0m
