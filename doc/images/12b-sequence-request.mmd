@@ -1,0 +1,132 @@
+sequenceDiagram
+    %% ══════════════════════════════════════════════════════════════
+    %% PHASE 2: API REQUEST EXECUTION (MCP Tool Call)
+    %% ══════════════════════════════════════════════════════════════
+    
+    autonumber
+    
+    participant Dev as 👤 Developer
+    participant Chat as Copilot Chat
+    participant LLM as GitHub Copilot<br/>(LLM)
+    participant MCP as MCP Client
+    participant TM as TokenManager
+    participant ALB as ALB<br/>(TLS Termination)
+    participant Kong as Kong Gateway
+    participant Ping as PingFederate<br/>(JWKS)
+    participant Svc as K8s Service<br/>(ClusterIP)
+    participant Pod as MCP Server<br/>(Python)
+    participant MSK as Amazon MSK
+
+    Note over Dev,MSK: Phase 2: API Request Execution (Token Already Cached)
+    
+    rect rgb(232, 245, 233)
+        Note over MCP,TM: Get Token (~0ms)
+        MCP->>TM: getAccessToken()
+        TM->>TM: Check memory cache
+        Note right of TM: _accessToken exists ✓<br/>_expiresAt > now ✓
+        TM-->>MCP: Bearer token
+    end
+    
+    rect rgb(227, 242, 253)
+        Note over MCP,Kong: HTTPS Request (5-15ms)
+        
+        MCP->>MCP: Read ~/.vscode/mcp.json
+        Note right of MCP: url: https://mcp.company.com/kafka/prod
+        
+        MCP->>ALB: POST /kafka/prod/mcp
+        Note over MCP,ALB: Headers:<br/>Authorization: Bearer eyJhbG...<br/>Content-Type: application/json<br/>X-Request-ID: uuid-1234
+        Note over MCP,ALB: Body:<br/>{<br/>  "jsonrpc": "2.0",<br/>  "method": "tools/call",<br/>  "params": {<br/>    "name": "list_topics"<br/>  },<br/>  "id": "req-001"<br/>}
+        
+        ALB->>ALB: TLS termination (ACM cert)
+        ALB->>ALB: Health check: targets healthy
+        ALB->>Kong: HTTP :8000
+    end
+    
+    rect rgb(255, 243, 224)
+        Note over Kong,Ping: Kong Plugin Chain (2-10ms)
+        
+        Kong->>Kong: 1. CORS Plugin
+        Note right of Kong: Origin: vscode-webview://*<br/>✓ Allowed
+        
+        Kong->>Kong: 2. JWT Plugin - Fetch JWKS
+        alt JWKS not cached
+            Kong->>Ping: GET /pf/JWKS
+            Ping-->>Kong: {keys: [{kty, n, e, kid}]}
+            Note right of Kong: Cache for 5 minutes
+        end
+        
+        Kong->>Kong: 3. JWT Plugin - Validate
+        Note right of Kong: ✓ Signature (RS256)<br/>✓ exp > now<br/>✓ aud == "mcp-api"<br/>✓ iss == "pingfed"
+        
+        alt JWT Invalid
+            Kong-->>ALB: 401 Unauthorized
+            ALB-->>MCP: 401
+            Note over MCP: Trigger token refresh
+        end
+        
+        Kong->>Kong: 4. Rate Limiting Plugin
+        Note right of Kong: User: user@company.com<br/>Count: 15/100 per minute<br/>✓ Under limit
+        
+        alt Rate Exceeded
+            Kong-->>ALB: 429 Too Many Requests
+            ALB-->>MCP: 429 + Retry-After: 30
+        end
+        
+        Kong->>Kong: 5. Request Transformer
+        Note right of Kong: Remove: Authorization header<br/>Add: X-User-Email: user@co.com<br/>Add: X-User-Teams: team-a,team-b<br/>Add: X-Consumer-ID: user123
+        
+        Kong->>Kong: 6. Route to service
+        Note right of Kong: Path: /kafka/prod/*<br/>→ svc/kafka-mcp-prod
+    end
+    
+    rect rgb(243, 229, 245)
+        Note over Kong,Pod: Kubernetes Routing (1-5ms)
+        
+        Kong->>Svc: Forward request
+        Note over Svc: kafka-mcp-prod<br/>ClusterIP:8080
+        
+        Svc->>Svc: Load balance (round-robin)
+        Note right of Svc: Endpoints:<br/>• pod-1: 10.0.1.10:8080<br/>• pod-2: 10.0.1.11:8080<br/>• pod-3: 10.0.1.12:8080<br/>Selected: pod-1
+        
+        Svc->>Pod: Forward to pod-1
+    end
+    
+    rect rgb(255, 235, 238)
+        Note over Pod,MSK: MCP Server Processing (50-200ms)
+        
+        Pod->>Pod: Parse MCP request
+        Note right of Pod: method: tools/call<br/>tool: list_topics
+        
+        Pod->>Pod: Extract user context
+        Note right of Pod: X-User-Email: user@co.com<br/>X-User-Teams: team-a
+        
+        Pod->>Pod: Route to handler
+        Note right of Pod: @mcp.tool()<br/>async def list_topics()
+        
+        Pod->>MSK: AdminClient.list_topics()
+        Note over Pod,MSK: SASL_SSL connection<br/>bootstrap.servers: msk-prod:9094
+        
+        MSK->>MSK: Fetch topic metadata
+        MSK-->>Pod: TopicCollection
+        Note over MSK,Pod: [<br/>  {name: "orders.created"},<br/>  {name: "orders.updated"},<br/>  {name: "payments.processed"}<br/>]
+        
+        Pod->>Pod: Format MCP response
+    end
+    
+    rect rgb(232, 245, 233)
+        Note over Pod,Dev: Response Path
+        
+        Pod-->>Svc: MCP Response
+        Note over Pod,Svc: {<br/>  "jsonrpc": "2.0",<br/>  "id": "req-001",<br/>  "result": {<br/>    "content": [{<br/>      "type": "text",<br/>      "text": "Topics: orders.created,<br/>              orders.updated,<br/>              payments.processed"<br/>    }]<br/>  }<br/>}
+        
+        Svc-->>Kong: Response
+        Kong-->>ALB: Response
+        ALB-->>MCP: HTTPS Response
+        
+        MCP-->>LLM: Tool result
+        LLM->>LLM: Format natural language
+        LLM-->>Chat: "Found 3 topics on prod:<br/>• orders.created<br/>• orders.updated<br/>• payments.processed"
+        Chat-->>Dev: Display response
+    end
+    
+    Note over Dev,MSK: ⏱️ Total Duration: 150-500ms (P95)

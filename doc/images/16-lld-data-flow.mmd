@@ -1,0 +1,102 @@
+flowchart LR
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD DATA FLOW DIAGRAM - Request/Response Structures
+    %% Industry Standard: Data flow with transformations
+    %% ══════════════════════════════════════════════════════════════
+
+    subgraph Input["Input Data"]
+        direction TB
+        
+        USER_INPUT["User Input<br/>────────────────<br/>'List all topics<br/>on production'"]
+    end
+
+    subgraph LLM_Transform["LLM Transformation"]
+        direction TB
+        
+        LLM_PARSE["Intent Parser<br/>────────────────<br/>action: list_topics<br/>env: prod<br/>filter: none"]
+        
+        TOOL_CALL["Tool Call<br/>────────────────<br/>{<br/>  tool: 'list_topics',<br/>  arguments: {<br/>    environment: 'prod'<br/>  }<br/>}"]
+    end
+
+    subgraph Auth_Data["Authentication Data"]
+        direction TB
+        
+        JWT_TOKEN["JWT Token<br/>────────────────────────────<br/>{<br/>  header: {alg: RS256, typ: JWT},<br/>  payload: {<br/>    sub: 'user123',<br/>    email: 'user@co.com',<br/>    teams: ['team-a'],<br/>    aud: 'mcp-api',<br/>    iss: 'pingfed',<br/>    exp: 1739721600,<br/>    iat: 1739718000<br/>  },<br/>  signature: '...'<br/>}"]
+    end
+
+    subgraph HTTP_Request["HTTP Request"]
+        direction TB
+        
+        REQ_HEADERS["Headers<br/>────────────────────────────<br/>POST /kafka/prod/mcp HTTP/1.1<br/>Host: mcp.company.com<br/>Authorization: Bearer eyJhbG...<br/>Content-Type: application/json<br/>X-Request-ID: uuid-1234<br/>User-Agent: vscode-mcp/1.0"]
+        
+        REQ_BODY["Request Body (MCP Protocol)<br/>────────────────────────────<br/>{<br/>  'jsonrpc': '2.0',<br/>  'id': 'req-001',<br/>  'method': 'tools/call',<br/>  'params': {<br/>    'name': 'list_topics',<br/>    'arguments': {}<br/>  }<br/>}"]
+    end
+
+    subgraph Kong_Transform["Kong Transformation"]
+        direction TB
+        
+        JWT_EXTRACT["JWT Claims Extraction<br/>────────────────────────────<br/>Verify signature ✓<br/>Check exp > now ✓<br/>Check aud == mcp-api ✓"]
+        
+        HEADER_TRANS["Header Transform<br/>────────────────────────────<br/>- Remove: Authorization<br/>+ Add: X-User-Email<br/>+ Add: X-User-Teams<br/>+ Add: X-Consumer-ID"]
+        
+        INTERNAL_REQ["Internal Request<br/>────────────────────────────<br/>POST /mcp HTTP/1.1<br/>Host: kafka-mcp-prod:8080<br/>X-User-Email: user@co.com<br/>X-User-Teams: team-a<br/>X-Consumer-ID: user123<br/>X-Request-ID: uuid-1234"]
+    end
+
+    subgraph MCP_Processing["MCP Server Processing"]
+        direction TB
+        
+        TOOL_ROUTE["Tool Router<br/>────────────────<br/>method: tools/call<br/>tool: list_topics<br/>→ KafkaAdminService"]
+        
+        KAFKA_CMD["Kafka Command<br/>────────────────<br/>AdminClient<br/>.listTopics()<br/>.get(30, SECONDS)"]
+        
+        KAFKA_RESP["Kafka Response<br/>────────────────<br/>Set<TopicListing>:<br/>- orders<br/>- payments<br/>- notifications"]
+    end
+
+    subgraph Transform_Response["Response Transformation"]
+        direction TB
+        
+        MCP_RESP["MCP Response<br/>────────────────────────────<br/>{<br/>  'jsonrpc': '2.0',<br/>  'id': 'req-001',<br/>  'result': {<br/>    'content': [{<br/>      'type': 'text',<br/>      'text': 'Topics: orders,<br/>              payments,<br/>              notifications'<br/>    }]<br/>  }<br/>}"]
+        
+        HTTP_RESP["HTTP Response<br/>────────────────────────────<br/>HTTP/1.1 200 OK<br/>Content-Type: application/json<br/>X-Request-ID: uuid-1234<br/>X-Response-Time: 145ms<br/><br/>{response body}"]
+    end
+
+    subgraph Output["Output Data"]
+        direction TB
+        
+        LLM_FORMAT["LLM Formatting<br/>────────────────<br/>Convert to natural<br/>language response"]
+        
+        USER_OUTPUT["User Output<br/>────────────────<br/>'Found 3 topics on<br/>production:<br/>• orders<br/>• payments<br/>• notifications'"]
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% DATA FLOW CONNECTIONS
+    %% ─────────────────────────────────────────────────────────────
+    
+    USER_INPUT --> LLM_PARSE
+    LLM_PARSE --> TOOL_CALL
+    TOOL_CALL --> REQ_BODY
+    JWT_TOKEN --> REQ_HEADERS
+    REQ_HEADERS --> JWT_EXTRACT
+    REQ_BODY --> INTERNAL_REQ
+    JWT_EXTRACT --> HEADER_TRANS
+    HEADER_TRANS --> INTERNAL_REQ
+    INTERNAL_REQ --> TOOL_ROUTE
+    TOOL_ROUTE --> KAFKA_CMD
+    KAFKA_CMD --> KAFKA_RESP
+    KAFKA_RESP --> MCP_RESP
+    MCP_RESP --> HTTP_RESP
+    HTTP_RESP --> LLM_FORMAT
+    LLM_FORMAT --> USER_OUTPUT
+
+    %% ─────────────────────────────────────────────────────────────
+    %% STYLING
+    %% ─────────────────────────────────────────────────────────────
+    
+    style Input fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style LLM_Transform fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Auth_Data fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style HTTP_Request fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style Kong_Transform fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style MCP_Processing fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style Transform_Response fill:#e0f2f1,stroke:#00796b,stroke-width:2px
+    style Output fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

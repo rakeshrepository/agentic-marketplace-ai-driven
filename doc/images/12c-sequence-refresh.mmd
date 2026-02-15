@@ -1,0 +1,124 @@
+sequenceDiagram
+    %% ══════════════════════════════════════════════════════════════
+    %% PHASE 3: TOKEN REFRESH (Background Process)
+    %% ══════════════════════════════════════════════════════════════
+    
+    autonumber
+    
+    participant Timer as ⏰ Refresh Timer
+    participant TM as TokenManager
+    participant KCH as OS Keychain
+    participant Ping as PingFederate
+    participant Ext as Auth Extension
+    participant Status as Status Bar
+    participant Dev as 👤 Developer
+
+    Note over Timer,Dev: Phase 3: Automatic Token Refresh (Every 50 Minutes)
+    
+    rect rgb(227, 242, 253)
+        Note over Timer,TM: Timer Trigger
+        
+        Timer->>Timer: 50 minutes elapsed
+        Timer->>TM: Execute refresh
+        
+        TM->>TM: Check current token state
+        Note right of TM: _expiresAt = T+60min<br/>Current time = T+50min<br/>Time remaining = 10min
+    end
+    
+    rect rgb(255, 243, 224)
+        Note over TM,KCH: Retrieve Refresh Token
+        
+        TM->>KCH: Get stored refresh_token
+        Note over TM,KCH: Key: "mcp-auth.refresh_token"<br/>Encrypted storage
+        KCH-->>TM: refresh_token
+    end
+    
+    rect rgb(232, 245, 233)
+        Note over TM,Ping: Token Refresh Request
+        
+        TM->>Ping: POST /as/token.oauth2
+        Note over TM,Ping: grant_type=refresh_token<br/>refresh_token={token}<br/>client_id=mcp-vscode
+        
+        alt Refresh Successful
+            Ping->>Ping: Validate refresh_token
+            Note right of Ping: ✓ Token not expired (30 days)<br/>✓ Token not revoked<br/>✓ Client ID matches
+            
+            Ping->>Ping: Generate new tokens
+            Ping-->>TM: New Token Response
+            Note over Ping,TM: {<br/>  access_token: "eyJhbG...(new)",<br/>  refresh_token: "dGhpcy...(new)",<br/>  expires_in: 3600<br/>}
+            
+            rect rgb(200, 230, 201)
+                Note over TM,Status: Update Local State
+                
+                TM->>TM: Update memory cache
+                Note right of TM: _accessToken = new token<br/>_expiresAt = now + 3600s
+                
+                TM->>KCH: Store new refresh_token
+                KCH-->>TM: Stored ✓
+                
+                TM->>TM: Reschedule timer
+                Note right of TM: Next refresh in 50 minutes
+                
+                TM->>Ext: onDidChangeSessions event
+                Ext->>Status: Update indicator
+                Status->>Status: ✅ MCP: user@co.com
+            end
+            
+            Note over Dev: Seamless experience<br/>No interruption
+            
+        else Refresh Failed - Token Expired (>30 days)
+            Ping-->>TM: 400 Bad Request
+            Note over Ping,TM: {<br/>  error: "invalid_grant",<br/>  error_description: "Refresh token expired"<br/>}
+            
+            rect rgb(255, 205, 210)
+                Note over TM,Dev: Handle Expiry
+                
+                TM->>TM: Clear all tokens
+                Note right of TM: _accessToken = null<br/>_expiresAt = 0
+                
+                TM->>KCH: Delete refresh_token
+                KCH-->>TM: Deleted ✓
+                
+                TM->>TM: Cancel refresh timer
+                
+                TM->>Ext: onDidChangeSessions event
+                Ext->>Status: Update indicator
+                Status->>Status: ❌ MCP: Not signed in
+                
+                Note over Dev: Must re-authenticate<br/>on next request
+            end
+            
+        else Refresh Failed - Token Revoked
+            Ping-->>TM: 400 Bad Request
+            Note over Ping,TM: {<br/>  error: "invalid_grant",<br/>  error_description: "Token has been revoked"<br/>}
+            
+            rect rgb(255, 205, 210)
+                Note over TM,Dev: Handle Revocation
+                
+                TM->>TM: Clear all tokens
+                TM->>KCH: Delete refresh_token
+                TM->>Ext: onDidChangeSessions event
+                Ext->>Status: Update indicator
+                Status->>Status: ❌ MCP: Not signed in
+                
+                Note over Dev: Admin revoked access<br/>or password changed
+            end
+            
+        else Refresh Failed - Server Error
+            Ping-->>TM: 503 Service Unavailable
+            
+            rect rgb(255, 243, 224)
+                Note over TM: Retry with Backoff
+                
+                TM->>TM: Keep existing token
+                Note right of TM: Current token still valid<br/>for ~10 more minutes
+                
+                TM->>TM: Schedule retry
+                Note right of TM: Retry in 2 minutes<br/>(before token expires)
+                
+                Note over Dev: No impact yet<br/>Using cached token
+            end
+        end
+    end
+    
+    Note over Timer,Dev: ⏱️ Refresh Duration: 200-500ms (transparent to user)

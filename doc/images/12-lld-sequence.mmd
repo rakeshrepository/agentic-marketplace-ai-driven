@@ -1,0 +1,150 @@
+sequenceDiagram
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD SEQUENCE DIAGRAM - Complete Authentication & Request Flow
+    %% Industry Standard: UML 2.0 Sequence Diagram
+    %% ══════════════════════════════════════════════════════════════
+    
+    autonumber
+    
+    participant Dev as 👤 Developer
+    participant Chat as Copilot Chat
+    participant LLM as GitHub Copilot<br/>(LLM)
+    participant MCP as MCP Client
+    participant Ext as Auth Extension
+    participant TM as TokenManager
+    participant KCH as Keychain
+    participant Ping as PingFederate
+    participant ALB as ALB
+    participant Kong as Kong Gateway
+    participant Svc as K8s Service
+    participant Pod as MCP Server Pod
+    participant MSK as Amazon MSK
+
+    %% ═══════════════════════════════════════════════════════════
+    %% PHASE 1: INITIAL AUTHENTICATION (First Time)
+    %% ═══════════════════════════════════════════════════════════
+    
+    rect rgb(255, 243, 224)
+        Note over Dev,Ping: Phase 1: Initial Authentication (OAuth 2.0 PKCE)
+        
+        Dev->>Chat: "List topics on prod"
+        Chat->>LLM: Send prompt
+        LLM->>MCP: Tool call: list_topics(env=prod)
+        MCP->>Ext: Get authentication session
+        Ext->>TM: getAccessToken()
+        TM->>TM: Check memory cache
+        
+        alt No token in memory
+            TM->>KCH: Retrieve refresh token
+            
+            alt No refresh token (first login)
+                Note over TM,Ping: OAuth 2.0 Authorization Code + PKCE
+                TM->>TM: Generate code_verifier (43-128 chars)
+                TM->>TM: code_challenge = SHA256(code_verifier)
+                TM->>Ping: GET /as/authorization.oauth2<br/>?response_type=code<br/>&client_id=mcp-vscode<br/>&redirect_uri=vscode://mcp-auth<br/>&scope=openid email offline_access<br/>&code_challenge={challenge}<br/>&code_challenge_method=S256
+                
+                Ping-->>Dev: Show login page (browser)
+                Dev->>Ping: Enter credentials + MFA
+                Ping->>Ping: Validate credentials
+                Ping-->>Ext: Redirect to vscode://mcp-auth?code={auth_code}
+                
+                Ext->>Ping: POST /as/token.oauth2<br/>grant_type=authorization_code<br/>&code={auth_code}<br/>&code_verifier={verifier}<br/>&client_id=mcp-vscode
+                
+                Ping->>Ping: Verify code_verifier
+                Ping-->>Ext: {access_token, refresh_token, expires_in: 3600}
+                
+                Ext->>TM: Store tokens
+                TM->>TM: _accessToken = token (memory)
+                TM->>TM: _expiresAt = now + 3600s
+                TM->>KCH: Store refresh_token (encrypted)
+                TM->>TM: scheduleRefresh(50 min)
+            end
+        end
+        
+        TM-->>Ext: Return access_token
+        Ext-->>MCP: AuthSession with token
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% PHASE 2: API REQUEST TO MCP SERVER
+    %% ═══════════════════════════════════════════════════════════
+    
+    rect rgb(227, 242, 253)
+        Note over MCP,MSK: Phase 2: MCP Tool Execution
+        
+        MCP->>MCP: Read mcp.json for server URL
+        MCP->>ALB: POST https://mcp.company.com/kafka/prod/mcp<br/>Authorization: Bearer {JWT}<br/>Content-Type: application/json<br/>{"method": "tools/call", "params": {"name": "list_topics"}}
+        
+        ALB->>ALB: TLS termination
+        ALB->>ALB: Health check: target healthy
+        ALB->>Kong: HTTP :8000 (forward)
+        
+        Kong->>Kong: CORS check (pass)
+        Kong->>Ping: GET /pf/JWKS (if not cached)
+        Ping-->>Kong: {keys: [{kty: RSA, n: ..., e: ...}]}
+        Kong->>Kong: JWT validation<br/>• Signature (RS256)<br/>• exp > now<br/>• aud == "mcp-api"
+        
+        alt JWT Invalid
+            Kong-->>MCP: 401 Unauthorized
+        else JWT Valid
+            Kong->>Kong: Rate limit check (100/min)
+            
+            alt Rate exceeded
+                Kong-->>MCP: 429 Too Many Requests
+            else Rate OK
+                Kong->>Kong: Extract claims → headers<br/>X-User-Email: user@company.com<br/>X-User-Teams: team-a,team-b
+                Kong->>Kong: Route /kafka/prod/* → svc-prod
+                Kong->>Svc: Forward request (stripped JWT)
+                
+                Svc->>Svc: Round-robin load balance
+                Svc->>Pod: Forward to pod-1
+                
+                Pod->>Pod: Parse MCP request
+                Pod->>Pod: Route to list_topics handler
+                Pod->>MSK: AdminClient.listTopics()
+                MSK-->>Pod: [topic-1, topic-2, topic-3]
+                
+                Pod->>Pod: Format MCP response
+                Pod-->>Svc: {"result": {"topics": [...]}}
+                Svc-->>Kong: Response
+                Kong-->>ALB: Response
+                ALB-->>MCP: HTTPS response
+            end
+        end
+        
+        MCP-->>LLM: Tool result
+        LLM->>LLM: Format natural language
+        LLM-->>Chat: "Found 3 topics: topic-1, topic-2, topic-3"
+        Chat-->>Dev: Display response
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% PHASE 3: TOKEN REFRESH (Background)
+    %% ═══════════════════════════════════════════════════════════
+    
+    rect rgb(232, 245, 233)
+        Note over TM,Ping: Phase 3: Automatic Token Refresh (every 50 min)
+        
+        TM->>TM: Timer fires (50 min)
+        TM->>KCH: Retrieve refresh_token
+        KCH-->>TM: refresh_token
+        
+        TM->>Ping: POST /as/token.oauth2<br/>grant_type=refresh_token<br/>&refresh_token={token}<br/>&client_id=mcp-vscode
+        
+        alt Refresh successful
+            Ping-->>TM: {access_token, refresh_token, expires_in: 3600}
+            TM->>TM: Update _accessToken (memory)
+            TM->>TM: Update _expiresAt
+            TM->>KCH: Store new refresh_token
+            TM->>TM: scheduleRefresh(50 min)
+            TM->>Ext: onDidChangeSessions event
+            Ext->>Ext: Update status bar ✅
+        else Refresh failed (token revoked)
+            Ping-->>TM: 400 invalid_grant
+            TM->>TM: Clear all tokens
+            TM->>KCH: Delete refresh_token
+            TM->>Ext: onDidChangeSessions event
+            Ext->>Ext: Update status bar ❌
+            Note over Dev: User must re-authenticate
+        end
+    end

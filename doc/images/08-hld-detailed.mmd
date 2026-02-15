@@ -1,0 +1,107 @@
+flowchart TB
+    subgraph Client["Client Layer (Developer Machine)"]
+        DEV["👨‍💻 Developer"]
+        subgraph VSCode["VS Code IDE"]
+            CHAT["Copilot Chat UI"]
+            MCP_CLIENT["MCP Client<br/>• Tool Discovery<br/>• Protocol Handler"]
+            EXT["MCP Auth Extension<br/>• Token Management<br/>• mcp.json Generation"]
+        end
+    end
+
+    subgraph GitHubCloud["GitHub Cloud (External)"]
+        COPILOT["GitHub Copilot LLM<br/>• GPT-4 based<br/>• Intent Recognition<br/>• Tool Selection<br/>• Response Formatting"]
+    end
+
+    subgraph Secrets["Secrets Management"]
+        GH_SECRETS["GitHub Secrets<br/>• PING_CLIENT_ID<br/>• PING_CLIENT_SECRET<br/>• KAFKA_SASL_USERNAME"]
+        AWS_SM["AWS Secrets Manager<br/>• kafka/dev/credentials<br/>• kafka/sit/credentials<br/>• kafka/uat/credentials<br/>• kafka/prod/credentials"]
+    end
+
+    subgraph AWS["AWS Cloud (Company Infrastructure)"]
+        subgraph LB["Load Balancer Layer"]
+            ALB["Application Load Balancer<br/>━━━━━━━━━━━━━━━━━━━<br/>• TLS Termination (443→80)<br/>• External Entry Point<br/>• Health Checks<br/>• DDoS Protection"]
+        end
+        
+        subgraph EKS["EKS Cluster"]
+            subgraph GW["API Gateway Layer"]
+                KONG["Kong Gateway<br/>━━━━━━━━━━━━━━━━━━━<br/>• JWT Validation (RS256)<br/>• Rate Limiting (100/min/user)<br/>• Path-based Routing<br/>• Circuit Breaker"]
+            end
+            
+            subgraph Services["Kubernetes Services (Internal LB)"]
+                SVC_DEV["svc/kafka-mcp-dev<br/>ClusterIP<br/>Round Robin"]
+                SVC_SIT["svc/kafka-mcp-sit<br/>ClusterIP<br/>Round Robin"]
+                SVC_UAT["svc/kafka-mcp-uat<br/>ClusterIP<br/>Round Robin"]
+                SVC_PROD["svc/kafka-mcp-prod<br/>ClusterIP<br/>Round Robin"]
+            end
+            
+            subgraph DevNS["Pods: mcp-dev"]
+                DEV1["pod-1"]
+                DEV2["pod-2"]
+            end
+            
+            subgraph SitNS["Pods: mcp-sit"]
+                SIT1["pod-1"]
+                SIT2["pod-2"]
+            end
+            
+            subgraph UatNS["Pods: mcp-uat"]
+                UAT1["pod-1"]
+                UAT2["pod-2"]
+            end
+            
+            subgraph ProdNS["Pods: mcp-prod"]
+                PROD1["pod-1"]
+                PROD2["pod-2"]
+                PROD3["pod-3"]
+            end
+        end
+        
+        subgraph MSK["Amazon MSK Clusters"]
+            MSK_DEV["MSK Dev<br/>3 brokers"]
+            MSK_SIT["MSK SIT<br/>3 brokers"]
+            MSK_UAT["MSK UAT<br/>3 brokers"]
+            MSK_PROD["MSK Prod<br/>6 brokers"]
+        end
+    end
+
+    subgraph Identity["Identity Provider (Corporate)"]
+        PING["PingFederate<br/>OAuth 2.0 / OIDC"]
+    end
+
+    DEV -->|"1. Natural Language"| CHAT
+    CHAT -->|"2. Send to LLM"| COPILOT
+    COPILOT -->|"3. Tool call"| MCP_CLIENT
+    MCP_CLIENT -->|"4. Get Token"| EXT
+    EXT -->|"5. HTTPS :443"| ALB
+    ALB -->|"6. HTTP :8000"| KONG
+    
+    KONG -->|"/kafka/dev/*"| SVC_DEV
+    KONG -->|"/kafka/sit/*"| SVC_SIT
+    KONG -->|"/kafka/uat/*"| SVC_UAT
+    KONG -->|"/kafka/prod/*"| SVC_PROD
+    
+    SVC_DEV --> DEV1 & DEV2
+    SVC_SIT --> SIT1 & SIT2
+    SVC_UAT --> UAT1 & UAT2
+    SVC_PROD --> PROD1 & PROD2 & PROD3
+    
+    DEV1 & DEV2 --> MSK_DEV
+    SIT1 & SIT2 --> MSK_SIT
+    UAT1 & UAT2 --> MSK_UAT
+    PROD1 & PROD2 & PROD3 --> MSK_PROD
+    
+    EXT -.->|"OAuth Flow"| PING
+    KONG -.->|"JWKS"| PING
+    
+    GH_SECRETS -.->|"CI/CD"| EKS
+    AWS_SM -.->|"Runtime"| DEV1 & DEV2 & SIT1 & SIT2 & UAT1 & UAT2 & PROD1 & PROD2 & PROD3
+
+    style Client fill:#e1f5fe,stroke:#01579b
+    style GitHubCloud fill:#e8f5e9,stroke:#2e7d32
+    style Secrets fill:#fff9c4,stroke:#f9a825
+    style AWS fill:#fff3e0,stroke:#e65100
+    style Identity fill:#fce4ec,stroke:#c2185b
+    style LB fill:#ffccbc,stroke:#e64a19
+    style GW fill:#d1c4e9,stroke:#512da8
+    style Services fill:#b2dfdb,stroke:#00796b
+    style VSCode fill:#bbdefb,stroke:#1565c0

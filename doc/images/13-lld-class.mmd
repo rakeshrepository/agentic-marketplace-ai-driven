@@ -1,0 +1,250 @@
+classDiagram
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD CLASS DIAGRAM - VS Code Extension & MCP Server
+    %% Industry Standard: UML 2.0 Class Diagram
+    %% ══════════════════════════════════════════════════════════════
+
+    %% ─────────────────────────────────────────────────────────────
+    %% VS CODE EXTENSION CLASSES (TypeScript)
+    %% ─────────────────────────────────────────────────────────────
+    
+    namespace VSCodeExtension {
+        class McpAuthProvider {
+            <<AuthenticationProvider>>
+            -_sessionChangeEmitter: EventEmitter
+            -_tokenManager: TokenManager
+            -_disposables: Disposable[]
+            +providerId: string = "mcp-auth"
+            +label: string = "MCP Authentication"
+            +onDidChangeSessions: Event
+            +getSessions(scopes?: string[]): Promise~AuthSession[]~
+            +createSession(scopes: string[]): Promise~AuthSession~
+            +removeSession(sessionId: string): Promise~void~
+            -_handleUri(uri: Uri): void
+            +dispose(): void
+        }
+
+        class TokenManager {
+            -_accessToken: string | null
+            -_refreshToken: string | null
+            -_expiresAt: number
+            -_refreshTimer: NodeJS.Timeout | null
+            -_secretStorage: SecretStorage
+            -_context: ExtensionContext
+            +constructor(context: ExtensionContext)
+            +getAccessToken(): Promise~string~
+            +refreshAccessToken(): Promise~void~
+            +clearTokens(): Promise~void~
+            +isAuthenticated(): boolean
+            -_scheduleRefresh(): void
+            -_isTokenExpired(): boolean
+            -_storeRefreshToken(token: string): Promise~void~
+            -_retrieveRefreshToken(): Promise~string | null~
+            -_exchangeCodeForToken(code: string, verifier: string): Promise~TokenResponse~
+            -_generatePKCE(): PKCEPair
+        }
+
+        class McpConfigManager {
+            -_configPath: string
+            -_watcher: FileSystemWatcher
+            -_config: McpConfig | null
+            +constructor()
+            +getConfig(): McpConfig
+            +getServerUrl(environment: string): string
+            +updateAuthHeader(token: string): Promise~void~
+            +watchForChanges(): void
+            -_loadConfig(): McpConfig
+            -_validateConfig(config: unknown): boolean
+            +dispose(): void
+        }
+
+        class StatusBarManager {
+            -_statusBarItem: StatusBarItem
+            -_tokenManager: TokenManager
+            +constructor(tokenManager: TokenManager)
+            +updateStatus(state: AuthState): void
+            +show(): void
+            +hide(): void
+            +dispose(): void
+        }
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% DATA TYPES (TypeScript Interfaces)
+    %% ─────────────────────────────────────────────────────────────
+    
+    namespace DataTypes {
+        class AuthSession {
+            <<interface>>
+            +id: string
+            +accessToken: string
+            +account: AccountInfo
+            +scopes: readonly string[]
+        }
+
+        class AccountInfo {
+            <<interface>>
+            +id: string
+            +label: string
+        }
+
+        class TokenResponse {
+            <<interface>>
+            +access_token: string
+            +refresh_token: string
+            +expires_in: number
+            +token_type: string
+            +scope: string
+        }
+
+        class PKCEPair {
+            <<interface>>
+            +verifier: string
+            +challenge: string
+        }
+
+        class McpConfig {
+            <<interface>>
+            +servers: Map~string, ServerConfig~
+            +inputs: Record~string, string~
+        }
+
+        class ServerConfig {
+            <<interface>>
+            +type: "http"
+            +url: string
+            +headers: Record~string, string~
+        }
+
+        class AuthState {
+            <<enumeration>>
+            SIGNED_OUT
+            AUTHENTICATING
+            SIGNED_IN
+            ERROR
+        }
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% MCP SERVER CLASSES (Python/FastAPI)
+    %% ─────────────────────────────────────────────────────────────
+    
+    namespace McpServer {
+        class KafkaMcpServer {
+            <<FastMCP>>
+            -admin_client: AdminClient
+            -config: KafkaConfig
+            +__init__(config: KafkaConfig)
+            +list_topics(): list[TopicInfo]
+            +describe_topic(name: str): TopicDetail
+            +create_topic(spec: TopicSpec): None
+            +delete_topic(name: str): None
+        }
+
+        class ToolHandlers {
+            <<mcp.tool decorator>>
+            +list_topics() -> list[str]
+            +describe_topic(topic_name: str) -> dict
+            +create_topic(name: str, partitions: int, replicas: int) -> str
+            +delete_topic(topic_name: str) -> str
+            +get_topic_config(topic_name: str) -> dict
+        }
+
+        class KafkaAdminService {
+            <<Service>>
+            -_admin_client: AdminClient
+            -_config: dict
+            +list_topics() -> list[TopicInfo]
+            +describe_topic(name: str) -> TopicDetail
+            +create_topic(spec: TopicSpec) -> None
+            +delete_topic(name: str) -> None
+            +get_topic_config(name: str) -> dict[str, str]
+            +describe_cluster() -> ClusterInfo
+            -_handle_kafka_error(e: KafkaException) -> None
+        }
+
+        class AdminClientFactory {
+            <<Factory>>
+            -_config: dict
+            +create_admin_client() -> AdminClient
+            -_build_config() -> dict
+        }
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% MCP SERVER DATA TYPES (Python)
+    %% ─────────────────────────────────────────────────────────────
+    
+    namespace McpServerTypes {
+        class McpRequest {
+            <<dataclass>>
+            +jsonrpc: str = "2.0"
+            +method: str
+            +params: dict[str, Any]
+            +id: str
+        }
+
+        class McpResponse {
+            <<dataclass>>
+            +jsonrpc: str = "2.0"
+            +result: Any
+            +error: McpError | None
+            +id: str
+        }
+
+        class McpError {
+            <<dataclass>>
+            +code: int
+            +message: str
+            +data: Any | None
+        }
+
+        class TopicInfo {
+            <<dataclass>>
+            +name: str
+            +partitions: int
+            +replication_factor: int
+            +internal: bool
+        }
+
+        class TopicSpec {
+            <<dataclass>>
+            +name: String
+            +partitions: int
+            +replicationFactor: int
+            +configs: Map~String, String~
+        }
+
+        class ToolDefinition {
+            <<record>>
+            +name: String
+            +description: String
+            +inputSchema: JsonSchema
+        }
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% RELATIONSHIPS
+    %% ─────────────────────────────────────────────────────────────
+    
+    %% Extension relationships
+    McpAuthProvider --> TokenManager : uses
+    McpAuthProvider --> McpConfigManager : uses
+    McpAuthProvider ..> AuthSession : creates
+    TokenManager --> PKCEPair : generates
+    TokenManager ..> TokenResponse : receives
+    McpConfigManager --> McpConfig : manages
+    McpConfig --> ServerConfig : contains
+    StatusBarManager --> TokenManager : observes
+    StatusBarManager --> AuthState : displays
+
+    %% Server relationships
+    McpController --> ToolRouter : delegates
+    ToolRouter --> KafkaAdminService : calls
+    KafkaAdminService --> AdminClientFactory : uses
+    McpController ..> McpRequest : receives
+    McpController ..> McpResponse : returns
+    McpResponse --> McpError : may contain
+    KafkaAdminService ..> TopicInfo : returns
+    KafkaAdminService ..> TopicSpec : accepts
+    ToolRouter --> ToolDefinition : exposes

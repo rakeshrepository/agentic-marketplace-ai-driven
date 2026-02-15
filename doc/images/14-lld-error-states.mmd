@@ -1,0 +1,184 @@
+flowchart TB
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD ERROR STATES DIAGRAM - Comprehensive Error Handling
+    %% Industry Standard: Error flow with recovery actions
+    %% ══════════════════════════════════════════════════════════════
+
+    subgraph Legend["Legend"]
+        direction LR
+        L_SUCCESS["✅ Success State"]
+        L_WARN["⚠️ Warning State"]
+        L_ERROR["❌ Error State"]
+        L_RETRY["🔄 Retry Action"]
+        L_USER["👤 User Action"]
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% AUTHENTICATION ERRORS
+    %% ═══════════════════════════════════════════════════════════
+    
+    subgraph AuthErrors["Authentication Errors"]
+        direction TB
+        
+        AUTH_START(["Request Token"])
+        
+        AUTH_E1["❌ E001: Network Unreachable<br/>─────────────────────<br/>PingFederate not reachable<br/>DNS resolution failed"]
+        AUTH_E1_R["🔄 Retry with backoff<br/>1s → 2s → 4s → 8s<br/>Max 3 attempts"]
+        AUTH_E1_F["👤 Check VPN connection<br/>Contact IT support"]
+        
+        AUTH_E2["❌ E002: Invalid Credentials<br/>─────────────────────<br/>Wrong username/password<br/>Account locked"]
+        AUTH_E2_R["👤 Re-enter credentials<br/>Reset password if locked"]
+        
+        AUTH_E3["❌ E003: MFA Failed<br/>─────────────────────<br/>Invalid OTP<br/>MFA timeout"]
+        AUTH_E3_R["👤 Request new OTP<br/>Check authenticator app"]
+        
+        AUTH_E4["❌ E004: PKCE Mismatch<br/>─────────────────────<br/>code_verifier invalid<br/>Session expired"]
+        AUTH_E4_R["🔄 Restart OAuth flow<br/>Clear browser cache"]
+        
+        AUTH_E5["❌ E005: Scope Denied<br/>─────────────────────<br/>Missing required scopes<br/>Consent not granted"]
+        AUTH_E5_R["👤 Grant consent<br/>Contact admin for scope"]
+        
+        AUTH_SUCCESS["✅ Token Obtained"]
+        
+        AUTH_START --> AUTH_E1 & AUTH_E2 & AUTH_E3 & AUTH_E4 & AUTH_E5
+        AUTH_E1 --> AUTH_E1_R --> AUTH_E1_F
+        AUTH_E2 --> AUTH_E2_R --> AUTH_START
+        AUTH_E3 --> AUTH_E3_R --> AUTH_START
+        AUTH_E4 --> AUTH_E4_R --> AUTH_START
+        AUTH_E5 --> AUTH_E5_R --> AUTH_SUCCESS
+        AUTH_START --> AUTH_SUCCESS
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% TOKEN REFRESH ERRORS
+    %% ═══════════════════════════════════════════════════════════
+    
+    subgraph RefreshErrors["Token Refresh Errors"]
+        direction TB
+        
+        REF_START(["Refresh Token"])
+        
+        REF_E1["❌ E101: Invalid Grant<br/>─────────────────────<br/>Refresh token expired<br/>(> 30 days)"]
+        REF_E1_R["👤 Re-authenticate<br/>Full OAuth flow required"]
+        
+        REF_E2["❌ E102: Token Revoked<br/>─────────────────────<br/>Admin revoked access<br/>Password changed"]
+        REF_E2_R["👤 Re-authenticate<br/>Check with admin"]
+        
+        REF_E3["⚠️ E103: Server Unavailable<br/>─────────────────────<br/>PingFederate 503<br/>Maintenance window"]
+        REF_E3_R["🔄 Use cached token<br/>Retry in 5 min"]
+        
+        REF_SUCCESS["✅ Token Refreshed"]
+        
+        REF_START --> REF_E1 & REF_E2 & REF_E3
+        REF_E1 --> REF_E1_R --> AUTH_START
+        REF_E2 --> REF_E2_R --> AUTH_START
+        REF_E3 --> REF_E3_R --> REF_START
+        REF_START --> REF_SUCCESS
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% GATEWAY ERRORS (Kong)
+    %% ═══════════════════════════════════════════════════════════
+    
+    subgraph GatewayErrors["API Gateway Errors (Kong)"]
+        direction TB
+        
+        GW_START(["API Request"])
+        
+        GW_E1["❌ E201: 401 Unauthorized<br/>─────────────────────<br/>JWT expired<br/>Invalid signature"]
+        GW_E1_R["🔄 Refresh token<br/>Retry request"]
+        
+        GW_E2["❌ E202: 403 Forbidden<br/>─────────────────────<br/>Missing audience claim<br/>Insufficient scope"]
+        GW_E2_R["👤 Re-authenticate<br/>with correct scopes"]
+        
+        GW_E3["⚠️ E203: 429 Rate Limited<br/>─────────────────────<br/>100 req/min exceeded<br/>Retry-After: 30s"]
+        GW_E3_R["🔄 Wait & retry<br/>Respect Retry-After"]
+        
+        GW_E4["❌ E204: 502 Bad Gateway<br/>─────────────────────<br/>Upstream unhealthy<br/>All pods down"]
+        GW_E4_R["🔄 Retry other pod<br/>Alert DevOps"]
+        
+        GW_E5["❌ E205: 503 Service Unavailable<br/>─────────────────────<br/>Circuit breaker open<br/>Deployment in progress"]
+        GW_E5_R["🔄 Exponential backoff<br/>Check status page"]
+        
+        GW_E6["❌ E206: 504 Gateway Timeout<br/>─────────────────────<br/>MCP Server slow<br/>Kafka connection hung"]
+        GW_E6_R["🔄 Retry with timeout<br/>Check Kafka health"]
+        
+        GW_SUCCESS["✅ Request Forwarded"]
+        
+        GW_START --> GW_E1 & GW_E2 & GW_E3 & GW_E4 & GW_E5 & GW_E6
+        GW_E1 --> GW_E1_R --> REF_START
+        GW_E2 --> GW_E2_R --> AUTH_START
+        GW_E3 --> GW_E3_R --> GW_START
+        GW_E4 --> GW_E4_R --> GW_START
+        GW_E5 --> GW_E5_R --> GW_START
+        GW_E6 --> GW_E6_R --> GW_START
+        GW_START --> GW_SUCCESS
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% MCP SERVER ERRORS
+    %% ═══════════════════════════════════════════════════════════
+    
+    subgraph ServerErrors["MCP Server Errors"]
+        direction TB
+        
+        SRV_START(["Tool Execution"])
+        
+        SRV_E1["❌ E301: Invalid Tool<br/>─────────────────────<br/>Tool not found<br/>Unknown method"]
+        SRV_E1_R["🔄 List available tools<br/>Check tool name"]
+        
+        SRV_E2["❌ E302: Invalid Params<br/>─────────────────────<br/>Missing required param<br/>Type mismatch"]
+        SRV_E2_R["🔄 Check schema<br/>Fix parameters"]
+        
+        SRV_E3["❌ E303: Kafka Unreachable<br/>─────────────────────<br/>MSK connection failed<br/>Security group blocked"]
+        SRV_E3_R["🔄 Circuit breaker<br/>Alert DevOps"]
+        
+        SRV_E4["❌ E304: SASL Auth Failed<br/>─────────────────────<br/>Invalid credentials<br/>Secret rotation needed"]
+        SRV_E4_R["👤 Rotate secrets<br/>AWS Secrets Manager"]
+        
+        SRV_E5["❌ E305: Topic Not Found<br/>─────────────────────<br/>Topic deleted<br/>Wrong environment"]
+        SRV_E5_R["🔄 Verify topic exists<br/>Check environment"]
+        
+        SRV_E6["❌ E306: ACL Denied<br/>─────────────────────<br/>No permission on topic<br/>Team not authorized"]
+        SRV_E6_R["👤 Request ACL access<br/>Contact Kafka admin"]
+        
+        SRV_SUCCESS["✅ Tool Executed"]
+        
+        SRV_START --> SRV_E1 & SRV_E2 & SRV_E3 & SRV_E4 & SRV_E5 & SRV_E6
+        SRV_E1 --> SRV_E1_R
+        SRV_E2 --> SRV_E2_R --> SRV_START
+        SRV_E3 --> SRV_E3_R
+        SRV_E4 --> SRV_E4_R
+        SRV_E5 --> SRV_E5_R --> SRV_START
+        SRV_E6 --> SRV_E6_R
+        SRV_START --> SRV_SUCCESS
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% ERROR CODE REFERENCE
+    %% ═══════════════════════════════════════════════════════════
+    
+    subgraph ErrorCodes["Error Code Reference"]
+        direction LR
+        
+        EC_AUTH["E0xx<br/>Authentication"]
+        EC_REF["E1xx<br/>Token Refresh"]
+        EC_GW["E2xx<br/>Gateway"]
+        EC_SRV["E3xx<br/>MCP Server"]
+    end
+
+    %% ═══════════════════════════════════════════════════════════
+    %% STYLING
+    %% ═══════════════════════════════════════════════════════════
+    
+    style AuthErrors fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style RefreshErrors fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style GatewayErrors fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style ServerErrors fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style ErrorCodes fill:#f5f5f5,stroke:#616161,stroke-width:1px
+    style Legend fill:#ffffff,stroke:#9e9e9e,stroke-width:1px
+    
+    style AUTH_SUCCESS fill:#c8e6c9,stroke:#2e7d32
+    style REF_SUCCESS fill:#c8e6c9,stroke:#2e7d32
+    style GW_SUCCESS fill:#c8e6c9,stroke:#2e7d32
+    style SRV_SUCCESS fill:#c8e6c9,stroke:#2e7d32

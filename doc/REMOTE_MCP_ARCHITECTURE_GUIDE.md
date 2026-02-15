@@ -56,21 +56,459 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 | Diagram | Primary Audience | Purpose |
 |---------|-----------------|---------|
-| [AWS Infrastructure](#1-aws-infrastructure-topology) | Architect, DevOps | VPC layout, EKS, MSK, network boundaries |
-| [Security Boundaries](#2-security-boundary-diagram) | Architect, Security | Auth flow, JWT validation, trust zones |
-| [Request Flow](#3-end-to-end-request-flow) | Developer, Architect | Message path from chat to Kafka |
-| [Extension Components](#4-vs-code-extension-architecture) | Developer | AuthProvider, TokenManager, internal structure |
-| [Token Lifecycle](#5-token-lifecycle-diagram) | Developer, Architect | Access/refresh tokens, 30-day scenario |
-| [User Journey](#6-user-journey-map) | Product Owner, Manager | Developer experience from install to daily use |
+| [High-Level Design (HLD)](#1-high-level-design-hld) | Executive, Architect | System layers, major components, data flow |
+| [Industry Standard View](#11-industry-standard-view-layered-architecture) | Enterprise Architect, Tech Lead | Layered architecture with trust boundaries |
+| [Low-Level Design (LLD)](#2-low-level-design-lld) | Developer, Architect | Detailed components, APIs, protocols |
+| [LLD Component Diagram](#21-lld-component-diagram-c4-level) | Developer, Architect | C4 component level - internal structure |
+| [LLD Sequence - Auth](#221-phase-1-initial-authentication-oauth-20-pkce) | Developer, Architect | OAuth 2.0 PKCE authentication flow |
+| [LLD Sequence - Request](#222-phase-2-api-request-execution) | Developer, Architect | MCP tool execution through Kong to Kafka |
+| [LLD Sequence - Refresh](#223-phase-3-token-refresh-background) | Developer, Architect | Background token refresh cycle |
+| [LLD Class Diagram](#23-lld-class-diagram-uml-20) | Developer | UML class - TypeScript/Python structures |
+| [LLD Error States](#24-lld-error-states-diagram) | Developer, DevOps | Error codes, causes, recovery actions |
+| [LLD State Machine](#25-lld-state-machine-diagram-uml-20) | Developer, Architect | Token, connection, circuit breaker states |
+| [LLD Data Flow](#26-lld-data-flow-diagram) | Developer, Architect | Request/response transformations |
+| [AWS Infrastructure](#3-aws-infrastructure-topology) | Architect, DevOps | VPC layout, EKS, MSK, network boundaries |
+| [Security Boundaries](#4-security-boundary-diagram) | Architect, Security | Auth flow, JWT validation, trust zones |
+| [Request Flow](#5-end-to-end-request-flow) | Developer, Architect | Message path from chat to Kafka |
+| [Extension Components](#6-vs-code-extension-architecture) | Developer | AuthProvider, TokenManager, internal structure |
+| [Token Lifecycle](#7-token-lifecycle-diagram) | Developer, Architect | Access/refresh tokens, 30-day scenario |
+| [User Journey](#8-user-journey-map) | Product Owner, Manager | Developer experience from install to daily use |
 
 ---
 
-### 1. AWS Infrastructure Topology
+### 1. High-Level Design (HLD)
+
+**Audience:** Executive, Senior Architect  
+**Purpose:** Shows overall system architecture with load balancing, multi-pod deployment, and secrets management
+
+![High-Level Design](images/08-hld-detailed.svg)
+
+**Architecture Layers:**
+| Layer | Location | Components | Responsibility |
+|-------|----------|------------|----------------|
+| **Client** | Developer Machine | VS Code (Chat UI, MCP Client, Auth Extension) | User interface, tool invocation, authentication |
+| **LLM** | GitHub Cloud (External) | GitHub Copilot (GPT-4) | Intent recognition, tool selection, response formatting |
+| **Load Balancer** | AWS | Application Load Balancer (ALB) | TLS termination, external entry, health checks |
+| **API Gateway** | AWS EKS | Kong Gateway | JWT validation, rate limiting, path-based routing |
+| **K8s Services** | AWS EKS | ClusterIP Services | Internal load balancing to pods (round-robin) |
+| **MCP Servers** | AWS EKS | kafka-mcp-{env} pods | Business logic, Kafka operations |
+| **Data** | AWS | Amazon MSK clusters | Message streaming, persistence |
+| **Identity** | Corporate | PingFederate | OAuth 2.0/OIDC, token issuance |
+| **Secrets** | GitHub + AWS | GitHub Secrets, AWS Secrets Manager | Credential storage |
+
+**Load Balancing Explained (3 Levels):**
+
+| Level | Component | What It Does | Why Needed |
+|-------|-----------|--------------|------------|
+| **L1: ALB** | Application Load Balancer | TLS termination (HTTPS→HTTP), external entry point, AWS DDoS protection, health checks | Single DNS entry (mcp.company.com), managed SSL certs |
+| **L2: Kong** | API Gateway | JWT validation, rate limiting (100/min/user), **path-based routing** (`/kafka/dev/*` → dev service) | Security & routing - decides WHICH environment |
+| **L3: K8s Service** | ClusterIP Service | **Round-robin** to pods within same deployment | Spreads load across multiple pods of same env |
+
+```
+Request: POST /kafka/prod/mcp
+
+Internet → ALB (TLS termination)
+              ↓
+         Kong (JWT check, route to svc/kafka-mcp-prod)
+              ↓
+         svc/kafka-mcp-prod (round-robin)
+              ↓
+         ┌────┼────┐
+         ↓    ↓    ↓
+       pod-1 pod-2 pod-3  ← Load distributed here
+```
+
+**Request Flow (numbered in diagram):**
+| Step | From | To | Description |
+|------|------|-----|-------------|
+| 1 | Developer | Copilot Chat UI | Natural language: "List topics on prod" |
+| 2 | VS Code | GitHub Copilot (Cloud) | Send prompt to LLM |
+| 3 | Copilot | MCP Client | LLM decides: call `list_topics` tool, env=prod |
+| 4 | MCP Client | Auth Extension | Get Bearer token from memory |
+| 5 | Extension | ALB → Kong → MCP | HTTPS request with JWT |
+
+**Environment Pod Configuration:**
+| Environment | Pods | MSK Brokers | Purpose |
+|-------------|------|-------------|---------|
+| **dev** | 2 | 3 | Development & testing |
+| **sit** | 2 | 3 | System integration testing |
+| **uat** | 2 | 3 | User acceptance testing |
+| **prod** | 3 | 6 | Production (HA) |
+
+**Secrets Management:**
+| Secret Type | Storage Location | Access Method |
+|-------------|-----------------|---------------|
+| `PING_CLIENT_ID` | GitHub Secrets | CI/CD → K8s Secret |
+| `PING_CLIENT_SECRET` | GitHub Secrets | CI/CD → K8s Secret |
+| `KAFKA_SASL_USERNAME` | GitHub Secrets | CI/CD → K8s Secret |
+| `kafka/{env}/credentials` | AWS Secrets Manager | Runtime SDK fetch |
+| `kafka/{env}/truststore` | AWS Secrets Manager | Runtime SDK fetch |
+
+**GitHub Secrets Setup:**
+```yaml
+# .github/workflows/deploy.yml
+env:
+  PING_CLIENT_ID: ${{ secrets.PING_CLIENT_ID }}
+  PING_CLIENT_SECRET: ${{ secrets.PING_CLIENT_SECRET }}
+  KAFKA_SASL_USERNAME: ${{ secrets.KAFKA_SASL_USERNAME }}
+```
+
+**AWS Secrets Manager Structure:**
+```
+kafka/dev/credentials    → {"username": "...", "password": "..."}
+kafka/sit/credentials    → {"username": "...", "password": "..."}
+kafka/uat/credentials    → {"username": "...", "password": "..."}
+kafka/prod/credentials   → {"username": "...", "password": "..."}
+```
+
+---
+
+### 1.1 Industry Standard View (Layered Architecture)
+
+**Audience:** Enterprise Architect, Technical Lead  
+**Purpose:** Standard layered architecture view following enterprise architecture best practices
+
+![Industry Standard HLD](images/10-hld-industry.svg)
+
+**Design Principles Applied:**
+
+| Principle | Implementation | Benefit |
+|-----------|---------------|---------|
+| **Layered Architecture** | 6 distinct layers (Presentation → Edge → Application → Data) | Clear separation of concerns |
+| **Single Responsibility** | Each component has one purpose (ALB=TLS, Kong=Auth, Service=LB) | Easier maintenance, testing |
+| **Defense in Depth** | WAF → ALB → Kong JWT → SASL_SSL | Multiple security checkpoints |
+| **12-Factor App** | Config in env vars, stateless pods, backing services | Cloud-native scalability |
+| **Cross-Cutting Concerns** | Security & Operations as separate layer | Centralized observability, secrets |
+
+**Layer Definitions (Top-Down):**
+
+| # | Layer | Components | Protocol | Responsibility |
+|---|-------|------------|----------|----------------|
+| 1 | **Presentation** | VS Code IDE (Copilot Chat, MCP Client, Auth Extension) | — | User interface, authentication |
+| 2 | **External Services** | GitHub Copilot (LLM), PingFederate (IdP) | HTTPS | AI reasoning, identity management |
+| 3 | **Edge (DMZ)** | ALB + AWS WAF | HTTPS→HTTP | TLS termination, DDoS protection, rate limiting |
+| 4 | **Application** | Kong Gateway + EKS Compute | HTTP, gRPC | API security, routing, business logic |
+| 5 | **Data** | Amazon MSK (Kafka) | SASL_SSL | Message persistence, streaming |
+| 6 | **Security & Ops** | Secrets Manager, IAM, CloudWatch | SDK | Credentials, RBAC, observability |
+
+**Trust Boundaries:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ TRUST ZONE 1: Developer Machine                                 │
+│   VS Code + Extensions (user's credentials)                     │
+├─────────────────────────────────────────────────────────────────┤
+│ TRUST ZONE 2: External SaaS                                     │
+│   GitHub Copilot (Microsoft managed)                            │
+│   PingFederate (Corporate managed)                              │
+├─────────────────────────────────────────────────────────────────┤
+│ TRUST ZONE 3: AWS DMZ (Public Subnet)                           │
+│   ALB + WAF (internet-facing, TLS only)                         │
+├─────────────────────────────────────────────────────────────────┤
+│ TRUST ZONE 4: AWS Private (Private Subnet)                      │
+│   Kong + EKS + MSK (no direct internet access)                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. Low-Level Design (LLD)
+
+**Audience:** Developer, Architect  
+**Purpose:** Shows detailed component interactions, APIs, and protocols
+
+![Low-Level Design](images/09-lld.svg)
+
+**Component Details:**
+
+| Component | Internal Structure | Key APIs/Protocols |
+|-----------|-------------------|-------------------|
+| **MCP Auth Extension** | AuthProvider → TokenManager → ConfigManager | `getSessions()`, `createSession()` |
+| **Token Storage** | Memory (fast) + Keychain (persistent) | ~0ms read from memory cache |
+| **Kong JWT Plugin** | RS256 verify → aud check → exp check | JWKS cached 5 min |
+| **Kafka MCP Server** | HTTP endpoint → Tool router → KafkaAdminClient | `list_topics`, `describe_topic`, `create_topic` |
+| **Request Headers** | `Authorization: Bearer JWT` → `X-User-Email`, `X-User-Teams` | JWT stripped at gateway |
+
+---
+
+### 2.1 LLD Component Diagram (C4 Level)
+
+**Audience:** Developer, Architect  
+**Purpose:** Internal structure of each system component following C4 Component diagram standards
+
+![LLD Component Diagram](images/11-lld-component.svg)
+
+**Component Breakdown:**
+
+| System | Module | Components |
+|--------|--------|------------|
+| **VS Code Extension** | Core | `activate()`, `deactivate()` |
+| | Authentication | `AuthenticationProvider`, `AuthSession` |
+| | Token | `TokenManager`, `TokenStorage` |
+| | Config | `McpConfigManager`, `McpConfig` |
+| | UI | `StatusBarItem`, Commands |
+| **Kong Gateway** | Plugins | CORS → JWT → RateLimit → RequestTransformer |
+| | Routing | `/kafka/{env}/*` → `kafka-mcp-{env}:8080` |
+| **MCP Server (Python)** | Web | `McpServer` (FastMCP), `Middleware` |
+| | Service | `ToolHandlers`, `KafkaAdminService` |
+| | Kafka | `confluent_kafka.AdminClient`, `KafkaConfig` |
+| | Model | `ToolRequest`, `ToolResponse`, `TopicInfo` |
+
+---
+
+### 2.2 LLD Sequence Diagrams (UML 2.0)
+
+**Audience:** Developer, Architect  
+**Purpose:** Step-by-step message flow with timing for authentication and request execution
+
+The sequence flow is split into three focused diagrams for clarity:
+
+---
+
+#### 2.2.1 Phase 1: Initial Authentication (OAuth 2.0 PKCE)
+
+**Trigger:** First request when no valid token exists  
+**Duration:** 3-10 seconds (depends on MFA speed)
+
+![Authentication Sequence](images/12a-sequence-auth.svg)
+
+**Key Steps:**
+1. Developer types natural language prompt
+2. GitHub Copilot parses intent, identifies MCP tool
+3. MCP Client requests authentication from Extension
+4. TokenManager checks memory cache (empty) → checks Keychain (empty)
+5. Initiates OAuth 2.0 PKCE flow:
+   - Generate `code_verifier` (43-128 random chars)
+   - Compute `code_challenge` = SHA256(verifier)
+   - Open browser to PingFederate
+6. User authenticates (credentials + MFA)
+7. PingFederate redirects with authorization code
+8. Extension exchanges code + verifier for tokens
+9. Access token → memory, Refresh token → Keychain
+10. Schedule background refresh at 50-minute intervals
+
+**Security Controls:**
+| Control | Purpose |
+|---------|---------|
+| PKCE | Prevents authorization code interception |
+| Keychain | Encrypted storage for refresh token |
+| Memory-only access token | Never persisted to disk |
+
+---
+
+#### 2.2.2 Phase 2: API Request Execution
+
+**Trigger:** Every tool invocation after authentication  
+**Duration:** 150-500ms (P95)
+
+![Request Execution Sequence](images/12b-sequence-request.svg)
+
+**Key Steps:**
+1. MCP Client gets token from memory (~0ms)
+2. Reads server URL from `~/.vscode/mcp.json`
+3. Sends HTTPS POST to ALB with Bearer JWT
+4. ALB terminates TLS, forwards to Kong
+5. Kong plugin chain executes:
+   - CORS validation
+   - JWT validation (JWKS from PingFederate)
+   - Rate limiting (100/min/user)
+   - Claims extraction → headers
+   - Route to environment service
+6. K8s Service load-balances to pod (round-robin)
+7. MCP Server processes request:
+   - Parse JSON-RPC 2.0
+   - Route to tool handler
+   - Execute Kafka AdminClient operation
+8. Response returns through same path
+9. LLM formats result as natural language
+
+**Latency Breakdown:**
+| Component | Duration |
+|-----------|----------|
+| Token from memory | ~0ms |
+| TLS + ALB | 5-15ms |
+| Kong validation | 2-10ms |
+| K8s routing | 1-5ms |
+| MCP processing | 10-50ms |
+| Kafka operation | 50-200ms |
+| **Total (P95)** | **150-500ms** |
+
+---
+
+#### 2.2.3 Phase 3: Token Refresh (Background)
+
+**Trigger:** Background timer fires 50 minutes after token issuance  
+**Duration:** 200-500ms (transparent to user)
+
+![Token Refresh Sequence](images/12c-sequence-refresh.svg)
+
+**Key Steps:**
+1. Refresh timer fires at 50 minutes (10 min before expiry)
+2. TokenManager retrieves refresh token from Keychain
+3. Sends refresh request to PingFederate
+4. On success:
+   - Update access token in memory
+   - Store new refresh token in Keychain
+   - Reschedule timer (50 min)
+   - Update status bar (✅)
+5. On failure:
+   - **Token expired (>30 days):** Clear tokens, user must re-auth
+   - **Token revoked:** Clear tokens, user must re-auth
+   - **Server error:** Retry with backoff, keep using cached token
+
+**Why 50 minutes (not 60)?**
+| Scenario | Token Age | Action |
+|----------|-----------|--------|
+| Normal | 50 min | Refresh (10 min buffer) |
+| Refresh fails | 50-60 min | Retry with backoff |
+| Still failing | 60 min | Token expires, force re-auth |
+
+**Error Handling:**
+| Error | HTTP | Recovery |
+|-------|------|----------|
+| Token expired | 400 | Clear tokens, re-authenticate |
+| Token revoked | 400 | Clear tokens, re-authenticate |
+| Server unavailable | 503 | Retry in 2 min, use cached token |
+
+---
+
+**Combined Sequence (Reference):**
+
+For a single combined view of all phases, see: ![Combined Sequence](images/12-lld-sequence.svg)
+
+---
+
+### 2.3 LLD Class Diagram (UML 2.0)
+
+**Audience:** Developer  
+**Purpose:** TypeScript/Python class structures with methods, properties, and relationships
+
+![LLD Class Diagram](images/13-lld-class.svg)
+
+**Key Classes:**
+
+| Namespace | Class | Responsibility |
+|-----------|-------|---------------|
+| **VS Code Extension** | `McpAuthProvider` | Implements VS Code AuthenticationProvider interface |
+| | `TokenManager` | Handles token storage, refresh scheduling, PKCE |
+| | `McpConfigManager` | Watches and updates `~/.vscode/mcp.json` |
+| | `StatusBarManager` | Updates status bar UI based on auth state |
+| **Data Types** | `AuthSession` | VS Code session interface |
+| | `TokenResponse` | OAuth token response from PingFed |
+| | `McpConfig` | mcp.json file structure |
+| **MCP Server (Python)** | `KafkaMcpServer` | FastMCP server with tool handlers |
+| | `ToolHandlers` | `@mcp.tool()` decorated functions |
+| | `KafkaAdminService` | confluent-kafka AdminClient wrapper |
+| **Server Types** | `McpRequest/Response` | JSON-RPC 2.0 dataclasses |
+| | `TopicInfo/TopicSpec` | Kafka topic dataclasses |
+
+---
+
+### 2.4 LLD Error States Diagram
+
+**Audience:** Developer, DevOps  
+**Purpose:** Comprehensive error handling with codes, causes, and recovery actions
+
+![LLD Error States Diagram](images/14-lld-error-states.svg)
+
+**Error Code Reference:**
+
+| Range | Category | Examples |
+|-------|----------|----------|
+| **E0xx** | Authentication | E001 Network Unreachable, E002 Invalid Credentials, E003 MFA Failed |
+| **E1xx** | Token Refresh | E101 Invalid Grant (expired), E102 Token Revoked, E103 Server Unavailable |
+| **E2xx** | Gateway (Kong) | E201 401 Unauthorized, E203 429 Rate Limited, E206 504 Timeout |
+| **E3xx** | MCP Server | E301 Invalid Tool, E303 Kafka Unreachable, E306 ACL Denied |
+
+**Recovery Actions:**
+
+| Action Type | Symbol | Description |
+|-------------|--------|-------------|
+| **Retry** | 🔄 | Automatic retry with backoff |
+| **User Action** | 👤 | Requires user intervention |
+| **Alert** | ⚠️ | Notify DevOps/Admin |
+
+---
+
+### 2.5 LLD State Machine Diagram (UML 2.0)
+
+**Audience:** Developer, Architect  
+**Purpose:** State transitions for tokens, connections, and circuit breakers
+
+![LLD State Machine Diagram](images/15-lld-state-machine.svg)
+
+**State Machines:**
+
+| Machine | States | Key Transitions |
+|---------|--------|-----------------|
+| **Token Lifecycle** | NoToken, Authenticating, TokenValid, Refreshing, TokenExpired | Sign In → Auth → Valid → Refresh cycle |
+| **Connection Lifecycle** | Disconnected, Connecting, Connected (Idle/Requesting), Error | Tool invoked → Connect → Request → Idle timeout |
+| **Circuit Breaker** | Closed, Open, HalfOpen | 5 failures → Open (30s) → HalfOpen → Test |
+| **Kafka Connection** | Init, Connecting, Ready, Error, Closed | Config → SASL_SSL → Ready or Error |
+
+**Circuit Breaker Configuration:**
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| Failure threshold | 5 | Failures before trip |
+| Reset timeout | 30s | Time before half-open |
+| Test requests | 1 | Requests in half-open |
+
+---
+
+### 2.6 LLD Data Flow Diagram
+
+**Audience:** Developer, Architect  
+**Purpose:** Request/response data transformations through the system
+
+![LLD Data Flow Diagram](images/16-lld-data-flow.svg)
+
+**Data Transformations:**
+
+| Stage | Input | Output |
+|-------|-------|--------|
+| **LLM Parsing** | "List all topics on production" | `{tool: "list_topics", arguments: {environment: "prod"}}` |
+| **HTTP Request** | Tool call + JWT | POST /kafka/prod/mcp with Authorization header |
+| **Kong Transform** | JWT claims | X-User-Email, X-User-Teams headers (JWT stripped) |
+| **MCP Processing** | `tools/call` request | Kafka AdminClient.listTopics() |
+| **Response Format** | `Set<TopicListing>` | MCP Response with content array |
+| **LLM Formatting** | MCP Response | "Found 3 topics: orders, payments, notifications" |
+
+**Request/Response Structures:**
+
+```json
+// MCP Request
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "method": "tools/call",
+  "params": {
+    "name": "list_topics",
+    "arguments": {}
+  }
+}
+
+// MCP Response
+{
+  "jsonrpc": "2.0",
+  "id": "req-001",
+  "result": {
+    "content": [{
+      "type": "text",
+      "text": "Topics: orders, payments, notifications"
+    }]
+  }
+}
+```
+
+---
+
+### 3. AWS Infrastructure Topology
 
 **Audience:** Senior Architect, DevOps, Security  
 **Purpose:** Shows VPC structure, network isolation, and component placement
 
-![AWS Infrastructure Topology](images/01-aws-infra.png)
+![AWS Infrastructure Topology](images/01-aws-infra.svg)
 
 **Key Points:**
 - ALB terminates TLS, forwards HTTP to Kong
@@ -80,12 +518,12 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 ---
 
-### 2. Security Boundary Diagram
+### 4. Security Boundary Diagram
 
 **Audience:** Senior Architect, Security Team  
 **Purpose:** Shows trust zones, authentication boundaries, and where validation occurs
 
-![Security Boundary Diagram](images/02-security.png)
+![Security Boundary Diagram](images/02-security.svg)
 
 **Security Model:**
 1. **All auth happens at Kong** — single point of control
@@ -95,12 +533,12 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 ---
 
-### 3. End-to-End Request Flow
+### 5. End-to-End Request Flow
 
 **Audience:** Developer, Architect  
 **Purpose:** Shows the complete message path with timing
 
-![End-to-End Request Flow](images/03-request-flow.png)
+![End-to-End Request Flow](images/03-request-flow.svg)
 
 **Timing Breakdown:**
 | Step | Duration |
@@ -115,12 +553,12 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 ---
 
-### 4. VS Code Extension Architecture
+### 6. VS Code Extension Architecture
 
 **Audience:** Developer (Extension Team)  
 **Purpose:** Shows internal components and data flow
 
-![VS Code Extension Architecture](images/04-extension.png)
+![VS Code Extension Architecture](images/04-extension.svg)
 
 **Component Responsibilities:**
 | Component | Lines of Code | Responsibility |
@@ -133,16 +571,16 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 ---
 
-### 5. Token Lifecycle Diagram
+### 7. Token Lifecycle Diagram
 
 **Audience:** Developer, Architect  
 **Purpose:** Shows token states, refresh timing, and 30-day scenario
 
-![Token Lifecycle State Diagram](images/05-token-lifecycle.png)
+![Token Lifecycle State Diagram](images/05-token-lifecycle.svg)
 
 **Timeline View:**
 
-![Token Lifecycle Timeline](images/05b-token-timeline.png)
+![Token Lifecycle Timeline](images/05b-token-timeline.svg)
 
 **Scenarios:**
 
@@ -156,12 +594,12 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 ---
 
-### 6. User Journey Map
+### 8. User Journey Map
 
 **Audience:** Product Owner, Manager  
 **Purpose:** Shows developer experience from install to daily use
 
-![User Journey Map](images/06-user-journey.png)
+![User Journey Map](images/06-user-journey.svg)
 
 **User Experience Metrics:**
 
@@ -175,7 +613,7 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 
 **Comparison: Before vs After MCP**
 
-![Before vs After Comparison](images/07-before-after.png)
+![Before vs After Comparison](images/07-before-after.svg)
 
 ---
 

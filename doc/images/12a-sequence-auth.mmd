@@ -1,0 +1,99 @@
+sequenceDiagram
+    %% ══════════════════════════════════════════════════════════════
+    %% PHASE 1: INITIAL AUTHENTICATION (OAuth 2.0 PKCE)
+    %% ══════════════════════════════════════════════════════════════
+    
+    autonumber
+    
+    participant Dev as 👤 Developer
+    participant Chat as Copilot Chat
+    participant LLM as GitHub Copilot<br/>(LLM)
+    participant MCP as MCP Client
+    participant Ext as Auth Extension
+    participant TM as TokenManager
+    participant KCH as OS Keychain
+    participant Browser as Browser
+    participant Ping as PingFederate
+
+    Note over Dev,Ping: Phase 1: Initial Authentication (First Time Login)
+    
+    Dev->>Chat: "List topics on prod"
+    Chat->>LLM: Send prompt to LLM
+    LLM->>LLM: Parse intent<br/>Tool: list_topics<br/>Env: prod
+    LLM->>MCP: Tool call request
+    
+    MCP->>Ext: getSession(scopes)
+    Ext->>TM: getAccessToken()
+    
+    rect rgb(255, 235, 238)
+        Note over TM,KCH: Check existing tokens
+        TM->>TM: Check memory cache
+        Note right of TM: _accessToken = null
+        TM->>KCH: Retrieve refresh_token
+        KCH-->>TM: null (first login)
+    end
+    
+    rect rgb(255, 243, 224)
+        Note over TM,Ping: OAuth 2.0 Authorization Code + PKCE
+        
+        TM->>TM: Generate PKCE pair
+        Note right of TM: code_verifier = random(43-128 chars)<br/>code_challenge = base64url(SHA256(verifier))
+        
+        TM->>Browser: Open authorization URL
+        Note over Browser: GET /as/authorization.oauth2<br/>?response_type=code<br/>&client_id=mcp-vscode<br/>&redirect_uri=vscode://mcp-auth<br/>&scope=openid email offline_access<br/>&code_challenge={challenge}<br/>&code_challenge_method=S256
+        
+        Browser->>Ping: Authorization request
+        Ping-->>Browser: Login page
+        
+        Browser->>Dev: Show login form
+        Dev->>Browser: Enter username + password
+        Browser->>Ping: Submit credentials
+        
+        Ping->>Ping: Validate credentials
+        
+        alt MFA Required
+            Ping-->>Browser: MFA challenge
+            Browser->>Dev: Show MFA prompt
+            Dev->>Browser: Enter OTP/Push approve
+            Browser->>Ping: Submit MFA
+            Ping->>Ping: Validate MFA
+        end
+        
+        Ping->>Ping: Generate authorization_code
+        Ping-->>Browser: Redirect to vscode://mcp-auth?code={auth_code}
+        Browser->>Ext: URI callback with code
+    end
+    
+    rect rgb(232, 245, 233)
+        Note over Ext,Ping: Token Exchange
+        
+        Ext->>TM: Exchange code for tokens
+        TM->>Ping: POST /as/token.oauth2
+        Note over TM,Ping: grant_type=authorization_code<br/>code={auth_code}<br/>code_verifier={verifier}<br/>client_id=mcp-vscode<br/>redirect_uri=vscode://mcp-auth
+        
+        Ping->>Ping: Verify code_verifier matches challenge
+        Ping->>Ping: Generate tokens
+        
+        Ping-->>TM: Token Response
+        Note over Ping,TM: {<br/>  access_token: "eyJhbG...",<br/>  refresh_token: "dGhpcy...",<br/>  token_type: "Bearer",<br/>  expires_in: 3600<br/>}
+    end
+    
+    rect rgb(227, 242, 253)
+        Note over TM,KCH: Store Tokens Securely
+        
+        TM->>TM: Store in memory
+        Note right of TM: _accessToken = token<br/>_expiresAt = now + 3600s
+        
+        TM->>KCH: Store refresh_token (encrypted)
+        KCH-->>TM: Stored ✓
+        
+        TM->>TM: Schedule refresh timer
+        Note right of TM: setTimeout(refresh, 50 min)
+    end
+    
+    TM-->>Ext: Return access_token
+    Ext->>Ext: Update status bar ✅
+    Ext-->>MCP: AuthSession
+    Note over MCP: Ready for API calls
+    
+    Note over Dev,Ping: ⏱️ Total Duration: 3-10 seconds (depends on MFA)

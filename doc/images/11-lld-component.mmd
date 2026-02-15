@@ -1,0 +1,179 @@
+flowchart TB
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD COMPONENT DIAGRAM - Industry Standard (C4 Component Level)
+    %% Shows internal structure of each system component
+    %% ══════════════════════════════════════════════════════════════
+
+    %% ─────────────────────────────────────────────────────────────
+    %% VS CODE EXTENSION COMPONENTS
+    %% ─────────────────────────────────────────────────────────────
+    subgraph VSCodeExt["VS Code MCP Auth Extension"]
+        direction TB
+        
+        subgraph Core["Core Module"]
+            ACTIVATE["activate()<br/>────────────<br/>Entry point<br/>Registers providers"]
+            DEACTIVATE["deactivate()<br/>────────────<br/>Cleanup<br/>Cancel timers"]
+        end
+        
+        subgraph Auth["Authentication Module"]
+            AUTH_PROVIDER["AuthenticationProvider<br/>────────────────────<br/>«interface» vscode.AuthenticationProvider<br/>────────────────────<br/>+ getSessions(scopes?)<br/>+ createSession(scopes)<br/>+ removeSession(sessionId)<br/>+ onDidChangeSessions"]
+            
+            SESSION["AuthSession<br/>────────────────────<br/>+ id: string<br/>+ accessToken: string<br/>+ account: {id, label}<br/>+ scopes: string[]"]
+        end
+        
+        subgraph Token["Token Module"]
+            TOKEN_MGR["TokenManager<br/>────────────────────<br/>- _accessToken: string | null<br/>- _refreshToken: string | null<br/>- _expiresAt: number<br/>- _refreshTimer: NodeJS.Timeout<br/>────────────────────<br/>+ getAccessToken(): Promise<string><br/>+ refreshAccessToken(): Promise<void><br/>+ clearTokens(): void<br/>- scheduleRefresh(): void<br/>- isTokenExpired(): boolean"]
+            
+            TOKEN_STORE["TokenStorage<br/>────────────────────<br/>«uses» vscode.SecretStorage<br/>────────────────────<br/>+ store(key, value)<br/>+ retrieve(key)<br/>+ delete(key)"]
+        end
+        
+        subgraph Config["Configuration Module"]
+            CONFIG_MGR["McpConfigManager<br/>────────────────────<br/>- _configPath: string<br/>- _watcher: FileWatcher<br/>────────────────────<br/>+ getConfig(): McpConfig<br/>+ updateToken(token): void<br/>+ getServerUrl(): string<br/>- watchConfigFile(): void"]
+            
+            MCP_CONFIG["McpConfig (mcp.json)<br/>────────────────────<br/>+ servers: Map<br/>+ inputs: object<br/>────────────────────<br/>kafka-admin-dev<br/>kafka-admin-sit<br/>kafka-admin-uat<br/>kafka-admin-prod"]
+        end
+        
+        subgraph UI["UI Module"]
+            STATUS_BAR["StatusBarItem<br/>────────────────────<br/>+ text: string<br/>+ tooltip: string<br/>+ command: string<br/>────────────────────<br/>✅ MCP: user@co.com<br/>⏳ MCP: Authenticating...<br/>❌ MCP: Not signed in"]
+            
+            COMMANDS["Commands<br/>────────────────────<br/>mcp.signIn<br/>mcp.signOut<br/>mcp.refreshToken<br/>mcp.showStatus"]
+        end
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% KONG GATEWAY COMPONENTS
+    %% ─────────────────────────────────────────────────────────────
+    subgraph KongGW["Kong API Gateway"]
+        direction TB
+        
+        subgraph Plugins["Plugin Chain"]
+            CORS["CORS Plugin<br/>────────────<br/>origins: *<br/>methods: POST,GET"]
+            
+            JWT_PLUGIN["JWT Plugin<br/>────────────────────<br/>+ algorithm: RS256<br/>+ claims_to_verify: exp, aud<br/>+ key_claim_name: iss<br/>+ run_on_preflight: false<br/>────────────────────<br/>verify(token) → claims"]
+            
+            RATE_PLUGIN["Rate Limiting<br/>────────────────────<br/>+ limit: 100<br/>+ window: 60s<br/>+ key: X-Consumer-ID<br/>+ policy: redis-cluster<br/>────────────────────<br/>check(user) → allow/deny"]
+            
+            REQ_TRANS["Request Transformer<br/>────────────────────<br/>+ remove: Authorization<br/>+ add: X-User-Email<br/>+ add: X-User-Teams"]
+        end
+        
+        subgraph Routing["Route Configuration"]
+            ROUTE_DEV["/kafka/dev/*<br/>→ kafka-mcp-dev:8080"]
+            ROUTE_SIT["/kafka/sit/*<br/>→ kafka-mcp-sit:8080"]
+            ROUTE_UAT["/kafka/uat/*<br/>→ kafka-mcp-uat:8080"]
+            ROUTE_PROD["/kafka/prod/*<br/>→ kafka-mcp-prod:8080"]
+        end
+        
+        UPSTREAM["Upstream Config<br/>────────────────────<br/>+ healthchecks: active<br/>+ slots: 10000<br/>+ hash_on: consumer"]
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% MCP SERVER COMPONENTS
+    %% ─────────────────────────────────────────────────────────────
+    subgraph McpServer["Kafka MCP Server (Python/FastAPI)"]
+        direction TB
+        
+        subgraph Web["Web Layer"]
+            MCP_CONTROLLER["McpServer<br/>────────────────────<br/>mcp.server.fastmcp<br/>────────────────────<br/>@mcp.tool()<br/>async def list_topics()<br/>@app.get(/health)<br/>def health_check()"]
+            
+            REQ_FILTER["Middleware<br/>────────────────────<br/>+ extract_user_email()<br/>+ validate_headers()<br/>+ log_request()"]
+        end
+        
+        subgraph Service["Service Layer"]
+            TOOL_ROUTER["ToolRouter<br/>────────────────────<br/>+ route(toolName)<br/>+ listTools()<br/>+ getToolSchema()"]
+            
+            KAFKA_SVC["KafkaAdminService<br/>────────────────────<br/>+ listTopics()<br/>+ describeTopic(name)<br/>+ createTopic(spec)<br/>+ deleteTopic(name)<br/>+ getTopicConfig(name)"]
+        end
+        
+        subgraph Kafka["Kafka Layer"]
+            ADMIN_CLIENT["AdminClient<br/>────────────────────<br/>confluent_kafka.AdminClient<br/>────────────────────<br/>+ list_topics()<br/>+ create_topics()<br/>+ delete_topics()<br/>+ describe_configs()"]
+            
+            KAFKA_CONFIG["KafkaConfig<br/>────────────────────<br/>+ bootstrap.servers<br/>+ security.protocol<br/>+ sasl.mechanism<br/>+ sasl.username/password"]
+        end
+        
+        subgraph Model["Domain Model"]
+            TOOL_REQ["ToolRequest<br/>────────────<br/>+ method: string<br/>+ params: object<br/>+ id: string"]
+            
+            TOOL_RES["ToolResponse<br/>────────────<br/>+ result: object<br/>+ error?: Error<br/>+ id: string"]
+            
+            TOPIC["TopicInfo<br/>────────────<br/>+ name: string<br/>+ partitions: int<br/>+ replicas: int<br/>+ configs: Map"]
+        end
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% PINGFEDERATE COMPONENTS
+    %% ─────────────────────────────────────────────────────────────
+    subgraph PingFed["PingFederate IdP"]
+        direction TB
+        
+        AUTH_EP["/as/authorization.oauth2<br/>────────────────────<br/>+ response_type: code<br/>+ client_id<br/>+ redirect_uri<br/>+ scope: openid email<br/>+ code_challenge (PKCE)"]
+        
+        TOKEN_EP["/as/token.oauth2<br/>────────────────────<br/>+ grant_type: authorization_code<br/>+ code<br/>+ code_verifier<br/>+ refresh_token"]
+        
+        JWKS_EP["/pf/JWKS<br/>────────────────────<br/>+ keys: [{kty, n, e, kid}]<br/>+ cache: 5min"]
+        
+        USERINFO_EP["/idp/userinfo.oauth2<br/>────────────────────<br/>+ sub: user_id<br/>+ email<br/>+ groups"]
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% CONNECTIONS
+    %% ─────────────────────────────────────────────────────────────
+    
+    %% Extension internal
+    ACTIVATE --> AUTH_PROVIDER
+    ACTIVATE --> CONFIG_MGR
+    ACTIVATE --> STATUS_BAR
+    AUTH_PROVIDER --> TOKEN_MGR
+    AUTH_PROVIDER --> SESSION
+    TOKEN_MGR --> TOKEN_STORE
+    CONFIG_MGR --> MCP_CONFIG
+    COMMANDS --> AUTH_PROVIDER
+    
+    %% Extension to external
+    TOKEN_MGR -->|"OAuth 2.0 PKCE"| AUTH_EP
+    TOKEN_MGR -->|"Token refresh"| TOKEN_EP
+    CONFIG_MGR -->|"HTTPS + Bearer"| KongGW
+    
+    %% Kong internal
+    CORS --> JWT_PLUGIN
+    JWT_PLUGIN --> RATE_PLUGIN
+    RATE_PLUGIN --> REQ_TRANS
+    REQ_TRANS --> Routing
+    JWT_PLUGIN -.->|"JWKS fetch"| JWKS_EP
+    
+    %% Kong to MCP
+    ROUTE_DEV --> McpServer
+    ROUTE_SIT --> McpServer
+    ROUTE_UAT --> McpServer
+    ROUTE_PROD --> McpServer
+    
+    %% MCP Server internal
+    MCP_CONTROLLER --> REQ_FILTER
+    REQ_FILTER --> TOOL_ROUTER
+    TOOL_ROUTER --> KAFKA_SVC
+    KAFKA_SVC --> ADMIN_CLIENT
+    ADMIN_CLIENT --> KAFKA_CONFIG
+    TOOL_ROUTER --> TOOL_REQ
+    TOOL_ROUTER --> TOOL_RES
+    KAFKA_SVC --> TOPIC
+
+    %% ─────────────────────────────────────────────────────────────
+    %% STYLING
+    %% ─────────────────────────────────────────────────────────────
+    style VSCodeExt fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style KongGW fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style McpServer fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style PingFed fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    
+    style Core fill:#bbdefb,stroke:#1976d2
+    style Auth fill:#bbdefb,stroke:#1976d2
+    style Token fill:#bbdefb,stroke:#1976d2
+    style Config fill:#bbdefb,stroke:#1976d2
+    style UI fill:#bbdefb,stroke:#1976d2
+    
+    style Plugins fill:#ffe0b2,stroke:#f57c00
+    style Routing fill:#ffe0b2,stroke:#f57c00
+    
+    style Web fill:#c8e6c9,stroke:#388e3c
+    style Service fill:#c8e6c9,stroke:#388e3c
+    style Kafka fill:#c8e6c9,stroke:#388e3c
+    style Model fill:#c8e6c9,stroke:#388e3c

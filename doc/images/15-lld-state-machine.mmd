@@ -1,0 +1,144 @@
+stateDiagram-v2
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD STATE MACHINE DIAGRAM - Token & Connection Lifecycle
+    %% Industry Standard: UML 2.0 State Machine
+    %% ══════════════════════════════════════════════════════════════
+
+    %% ─────────────────────────────────────────────────────────────
+    %% TOKEN LIFECYCLE STATE MACHINE
+    %% ─────────────────────────────────────────────────────────────
+    
+    state TokenLifecycle {
+        [*] --> NoToken: Extension activated
+        
+        NoToken: No credentials stored
+        NoToken: Status - Not signed in
+        
+        NoToken --> Authenticating: User clicks Sign In
+        
+        state Authenticating {
+            [*] --> PKCE: Generate verifier
+            PKCE --> Browser: Open browser
+            Browser --> Exchange: Receive auth code
+            Exchange --> [*]: Success
+        }
+        
+        Authenticating --> NoToken: User cancelled
+        Authenticating --> NoToken: Auth failed
+        Authenticating --> TokenValid: Token received
+        
+        TokenValid: Access token in memory
+        TokenValid: Status - user@company.com
+        TokenValid: Refresh scheduled at 50min
+        
+        TokenValid --> Refreshing: 50 min elapsed
+        TokenValid --> NoToken: User clicks Sign Out
+        TokenValid --> TokenExpired: Token expired
+        
+        Refreshing: Background refresh
+        Refreshing: Using refresh_token
+        
+        Refreshing --> TokenValid: New token received
+        Refreshing --> TokenExpired: Refresh failed
+        
+        TokenExpired: Access token invalid
+        TokenExpired: Status - Session expired
+        
+        TokenExpired --> Authenticating: Auto re-auth
+        TokenExpired --> NoToken: Refresh token expired 30d
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% CONNECTION STATE MACHINE
+    %% ─────────────────────────────────────────────────────────────
+    
+    state ConnectionLifecycle {
+        [*] --> Disconnected
+        
+        Disconnected: No active connection
+        Disconnected: Waiting for tool call
+        
+        Disconnected --> Connecting: Tool invoked
+        
+        Connecting: Establishing HTTPS
+        Connecting: TLS handshake
+        
+        Connecting --> Connected: Connection established
+        Connecting --> ConnectionError: Network error
+        
+        state Connected {
+            [*] --> Idle
+            Idle --> Requesting: Send request
+            Requesting --> Idle: Response received
+        }
+        
+        Connected --> Disconnected: Idle timeout 30s
+        Connected --> ConnectionError: Connection lost
+        
+        ConnectionError: Connection failed
+        ConnectionError: Will retry with backoff
+        
+        ConnectionError --> Connecting: Retry backoff
+        ConnectionError --> Disconnected: Max retries exceeded
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% CIRCUIT BREAKER STATE MACHINE
+    %% ─────────────────────────────────────────────────────────────
+    
+    state CircuitBreaker {
+        [*] --> Closed
+        
+        Closed: All requests pass through
+        Closed: Failure counter active
+        
+        Closed --> Open: Failure threshold 5
+        
+        Open: Requests fail fast 503
+        Open: Timer 30 seconds
+        
+        Open --> HalfOpen: Timeout elapsed
+        
+        HalfOpen: Allow 1 test request
+        HalfOpen: Evaluate result
+        
+        HalfOpen --> Closed: Test succeeded
+        HalfOpen --> Open: Test failed
+    }
+
+    %% ─────────────────────────────────────────────────────────────
+    %% KAFKA CONNECTION STATE MACHINE
+    %% ─────────────────────────────────────────────────────────────
+    
+    state KafkaLifecycle {
+        [*] --> KafkaInit
+        
+        KafkaInit: Loading configuration
+        KafkaInit: Reading secrets
+        
+        KafkaInit --> KafkaConnecting: Config loaded
+        KafkaInit --> KafkaError: Config missing
+        
+        KafkaConnecting: SASL_SSL handshake
+        KafkaConnecting: Bootstrap servers
+        
+        KafkaConnecting --> KafkaReady: Connected to cluster
+        KafkaConnecting --> KafkaError: Auth failed
+        
+        KafkaReady: AdminClient active
+        KafkaReady: Can execute operations
+        
+        KafkaReady --> KafkaError: Broker disconnected
+        KafkaReady --> KafkaClosed: Shutdown signal
+        
+        KafkaError: Connection failed
+        KafkaError: Will reconnect
+        
+        KafkaError --> KafkaConnecting: Retry exponential
+        KafkaError --> KafkaClosed: Max retries
+        
+        KafkaClosed: AdminClient closed
+        KafkaClosed: Resources released
+        
+        KafkaClosed --> [*]
+    }

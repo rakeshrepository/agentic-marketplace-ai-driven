@@ -1,0 +1,156 @@
+flowchart TB
+    %% Industry Standard HLD - Layered Architecture View
+    %% Following: AWS Well-Architected, C4 Container Diagram principles
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% ACTORS
+    %% ══════════════════════════════════════════════════════════════
+    DEV["👤 Developer<br/>─────────────<br/>Uses VS Code IDE<br/>with GitHub Copilot"]
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% PRESENTATION LAYER (Client Tier)
+    %% ══════════════════════════════════════════════════════════════
+    subgraph PRESENTATION["◼ PRESENTATION LAYER"]
+        direction LR
+        subgraph IDE["VS Code IDE"]
+            COPILOT_CHAT["Copilot Chat<br/>───────────<br/>Natural Language<br/>Interface"]
+            MCP_CLIENT["MCP Client<br/>───────────<br/>Tool Discovery<br/>HTTP Transport"]
+            AUTH_EXT["Auth Extension<br/>───────────<br/>OAuth 2.0 PKCE<br/>Token Management"]
+        end
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% EXTERNAL SERVICES
+    %% ══════════════════════════════════════════════════════════════
+    subgraph EXTERNAL["◼ EXTERNAL SERVICES"]
+        direction LR
+        GH_COPILOT["GitHub Copilot<br/>───────────<br/>LLM Service<br/>Intent → Tool Calls"]
+        PING["PingFederate IdP<br/>───────────<br/>OAuth 2.0 / OIDC<br/>JWT Issuance"]
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% EDGE LAYER (DMZ / Ingress)
+    %% ══════════════════════════════════════════════════════════════
+    subgraph EDGE["◼ EDGE LAYER (DMZ)"]
+        direction LR
+        ALB["Application Load Balancer<br/>─────────────────────<br/>• TLS Termination (ACM)<br/>• Health Checks<br/>• SSL Offloading"]
+        WAF["AWS WAF<br/>───────────<br/>• Rate Limiting<br/>• IP Filtering<br/>• OWASP Rules"]
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% APPLICATION LAYER (Business Logic)
+    %% ══════════════════════════════════════════════════════════════
+    subgraph APPLICATION["◼ APPLICATION LAYER"]
+        direction TB
+        subgraph GATEWAY["API Gateway (Kong)"]
+            direction LR
+            JWT_VAL["JWT Validation<br/>───────────<br/>RS256 / JWKS<br/>Audience Check"]
+            RATE["Rate Limiting<br/>───────────<br/>100 req/min<br/>Per User"]
+            ROUTE["Route Manager<br/>───────────<br/>Path → Service<br/>Mapping"]
+        end
+        
+        subgraph COMPUTE["Compute (EKS)"]
+            direction LR
+            subgraph ENV_DEV["DEV"]
+                SVC_DEV["Service"]
+                POD_DEV["Pods ×2"]
+            end
+            subgraph ENV_SIT["SIT"]
+                SVC_SIT["Service"]
+                POD_SIT["Pods ×2"]
+            end
+            subgraph ENV_UAT["UAT"]
+                SVC_UAT["Service"]
+                POD_UAT["Pods ×2"]
+            end
+            subgraph ENV_PROD["PROD"]
+                SVC_PROD["Service"]
+                POD_PROD["Pods ×3"]
+            end
+        end
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% DATA LAYER (Persistence)
+    %% ══════════════════════════════════════════════════════════════
+    subgraph DATA["◼ DATA LAYER"]
+        direction LR
+        MSK_DEV["MSK Dev<br/>3 Brokers"]
+        MSK_SIT["MSK SIT<br/>3 Brokers"]
+        MSK_UAT["MSK UAT<br/>3 Brokers"]
+        MSK_PROD["MSK Prod<br/>6 Brokers"]
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% SECURITY & OPERATIONS (Cross-Cutting)
+    %% ══════════════════════════════════════════════════════════════
+    subgraph SECURITY["◼ SECURITY & OPERATIONS"]
+        direction LR
+        SECRETS["AWS Secrets Manager<br/>─────────────────<br/>Kafka Credentials<br/>Per Environment"]
+        IAM["AWS IAM<br/>───────────<br/>Service Roles<br/>IRSA"]
+        CW["CloudWatch<br/>───────────<br/>Logs & Metrics<br/>Alarms"]
+    end
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% CONNECTIONS
+    %% ══════════════════════════════════════════════════════════════
+    
+    %% Actor to Presentation
+    DEV -->|"Uses"| IDE
+    
+    %% Presentation Layer flows
+    COPILOT_CHAT <-->|"NL ↔ Tools"| GH_COPILOT
+    AUTH_EXT <-->|"OAuth 2.0"| PING
+    MCP_CLIENT -->|"HTTPS + JWT"| ALB
+    
+    %% Edge Layer
+    ALB --> WAF
+    WAF --> GATEWAY
+    
+    %% Application Layer internal
+    JWT_VAL --> RATE --> ROUTE
+    ROUTE -->|"/kafka/dev/*"| SVC_DEV
+    ROUTE -->|"/kafka/sit/*"| SVC_SIT
+    ROUTE -->|"/kafka/uat/*"| SVC_UAT
+    ROUTE -->|"/kafka/prod/*"| SVC_PROD
+    
+    SVC_DEV --> POD_DEV
+    SVC_SIT --> POD_SIT
+    SVC_UAT --> POD_UAT
+    SVC_PROD --> POD_PROD
+    
+    %% Application to Data
+    POD_DEV -->|"SASL_SSL"| MSK_DEV
+    POD_SIT -->|"SASL_SSL"| MSK_SIT
+    POD_UAT -->|"SASL_SSL"| MSK_UAT
+    POD_PROD -->|"SASL_SSL"| MSK_PROD
+    
+    %% Cross-cutting concerns (dotted lines)
+    SECRETS -.->|"Credentials"| COMPUTE
+    IAM -.->|"IRSA"| COMPUTE
+    CW -.->|"Observability"| APPLICATION
+    PING -.->|"JWKS"| JWT_VAL
+    
+    %% ══════════════════════════════════════════════════════════════
+    %% STYLING (Industry Standard Colors)
+    %% ══════════════════════════════════════════════════════════════
+    
+    %% Actor
+    style DEV fill:#f5f5f5,stroke:#424242,stroke-width:2px
+    
+    %% Layers - using standard enterprise colors
+    style PRESENTATION fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style EXTERNAL fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style EDGE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style APPLICATION fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style DATA fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style SECURITY fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    
+    %% Sub-components
+    style IDE fill:#bbdefb,stroke:#1976d2
+    style GATEWAY fill:#f8bbd9,stroke:#c2185b
+    style COMPUTE fill:#f8bbd9,stroke:#c2185b
+    style ENV_DEV fill:#ffccbc,stroke:#e64a19
+    style ENV_SIT fill:#ffccbc,stroke:#e64a19
+    style ENV_UAT fill:#ffccbc,stroke:#e64a19
+    style ENV_PROD fill:#ef9a9a,stroke:#c62828,stroke-width:2px
