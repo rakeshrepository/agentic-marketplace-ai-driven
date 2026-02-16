@@ -1,0 +1,109 @@
+flowchart TB
+    %% ══════════════════════════════════════════════════════════════
+    %% LLD DATA FLOW DIAGRAM (VERTICAL) - Request/Response Structures
+    %% Industry Standard: Data flow with transformations
+    %% ══════════════════════════════════════════════════════════════
+
+    subgraph Layer1["👤 USER LAYER"]
+        direction LR
+        USER_INPUT["User Input<br/>──────────────────────<br/>'List all topics on production'"]
+    end
+
+    subgraph Layer2["🤖 LLM LAYER (GitHub Copilot)"]
+        direction LR
+        LLM_PARSE["Intent Parser<br/>──────────────────────<br/>action: list_topics<br/>env: prod"]
+        TOOL_CALL["Tool Call<br/>──────────────────────<br/>{tool: 'list_topics',<br/>arguments: {env: 'prod'}}"]
+        LLM_PARSE --> TOOL_CALL
+    end
+
+    subgraph Layer3["🔐 AUTH LAYER (Extension)"]
+        direction LR
+        JWT_TOKEN["JWT Token (from memory)<br/>──────────────────────────────────────<br/>{<br/>  sub: 'user123',<br/>  email: 'user@company.com',<br/>  teams: ['team-a'],<br/>  aud: 'mcp-api',<br/>  exp: 1739721600<br/>}"]
+    end
+
+    subgraph Layer4["📤 HTTP REQUEST"]
+        direction LR
+        REQ_HEADERS["Headers<br/>──────────────────────<br/>POST /kafka/prod/mcp<br/>Authorization: Bearer eyJ...<br/>Content-Type: application/json"]
+        REQ_BODY["Body (JSON-RPC 2.0)<br/>──────────────────────<br/>{<br/>  jsonrpc: '2.0',<br/>  method: 'tools/call',<br/>  params: {name: 'list_topics'},<br/>  id: 'req-001'<br/>}"]
+    end
+
+    subgraph Layer5["🌐 EDGE LAYER (ALB)"]
+        direction LR
+        TLS["TLS Termination<br/>──────────────────────<br/>HTTPS → HTTP<br/>ACM Certificate"]
+    end
+
+    subgraph Layer6["🛡️ GATEWAY LAYER (Kong)"]
+        direction LR
+        JWT_VALID["JWT Validation<br/>────────────<br/>✓ Signature<br/>✓ Expiry<br/>✓ Audience"]
+        RATE_CHECK["Rate Limit<br/>────────────<br/>15/100 min<br/>✓ OK"]
+        TRANSFORM["Transform<br/>────────────<br/>- Auth header<br/>+ X-User-Email<br/>+ X-User-Teams"]
+        ROUTE["Route<br/>────────────<br/>/kafka/prod/*<br/>→ svc-prod"]
+        JWT_VALID --> RATE_CHECK --> TRANSFORM --> ROUTE
+    end
+
+    subgraph Layer7["☸️ K8S LAYER"]
+        direction LR
+        SVC["Service: kafka-mcp-prod<br/>──────────────────────<br/>ClusterIP → Round Robin"]
+        POD["Pod Selection<br/>──────────────────────<br/>pod-1 (10.0.1.10)<br/>pod-2 (10.0.1.11)<br/>pod-3 (10.0.1.12)"]
+        SVC --> POD
+    end
+
+    subgraph Layer8["⚙️ MCP SERVER (Python)"]
+        direction LR
+        PARSE_REQ["Parse Request<br/>────────────<br/>method: tools/call<br/>tool: list_topics"]
+        TOOL_HANDLER["Tool Handler<br/>────────────<br/>@mcp.tool()<br/>list_topics()"]
+        KAFKA_CLIENT["Kafka Client<br/>────────────<br/>AdminClient<br/>.list_topics()"]
+        PARSE_REQ --> TOOL_HANDLER --> KAFKA_CLIENT
+    end
+
+    subgraph Layer9["📊 DATA LAYER (MSK)"]
+        direction LR
+        KAFKA_OP["Kafka Operation<br/>──────────────────────<br/>listTopics() → Metadata"]
+        KAFKA_RESULT["Result<br/>──────────────────────<br/>[orders, payments, notifications]"]
+        KAFKA_OP --> KAFKA_RESULT
+    end
+
+    subgraph Layer10["📥 RESPONSE PATH"]
+        direction LR
+        MCP_RESP["MCP Response<br/>──────────────────────<br/>{jsonrpc: '2.0',<br/>result: {content: [...]},<br/>id: 'req-001'}"]
+        HTTP_RESP["HTTP Response<br/>──────────────────────<br/>200 OK<br/>X-Response-Time: 145ms"]
+        MCP_RESP --> HTTP_RESP
+    end
+
+    subgraph Layer11["💬 OUTPUT LAYER"]
+        direction LR
+        LLM_FORMAT["LLM Formatting<br/>──────────────────────<br/>Convert to natural language"]
+        USER_OUTPUT["User Output<br/>──────────────────────<br/>'Found 3 topics:<br/>• orders<br/>• payments<br/>• notifications'"]
+        LLM_FORMAT --> USER_OUTPUT
+    end
+
+    %% ─────────────────────────────────────────────────────────────
+    %% VERTICAL DATA FLOW CONNECTIONS
+    %% ─────────────────────────────────────────────────────────────
+    
+    Layer1 -->|"1. Natural Language"| Layer2
+    Layer2 -->|"2. Tool Selection"| Layer3
+    Layer3 -->|"3. Add Bearer Token"| Layer4
+    Layer4 -->|"4. HTTPS POST"| Layer5
+    Layer5 -->|"5. Forward HTTP"| Layer6
+    Layer6 -->|"6. Validated + Routed"| Layer7
+    Layer7 -->|"7. Load Balanced"| Layer8
+    Layer8 -->|"8. Kafka Query"| Layer9
+    Layer9 -->|"9. Topic List"| Layer10
+    Layer10 -->|"10. Through Gateway"| Layer11
+
+    %% ─────────────────────────────────────────────────────────────
+    %% STYLING - Layer Colors
+    %% ─────────────────────────────────────────────────────────────
+    
+    style Layer1 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style Layer2 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Layer3 fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style Layer4 fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style Layer5 fill:#ffccbc,stroke:#e64a19,stroke-width:2px
+    style Layer6 fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style Layer7 fill:#e1bee7,stroke:#8e24aa,stroke-width:2px
+    style Layer8 fill:#c5cae9,stroke:#3949ab,stroke-width:2px
+    style Layer9 fill:#b2dfdb,stroke:#00897b,stroke-width:2px
+    style Layer10 fill:#dcedc8,stroke:#689f38,stroke-width:2px
+    style Layer11 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

@@ -66,7 +66,8 @@ This section provides visual diagrams for different stakeholders. Each diagram s
 | [LLD Class Diagram](#23-lld-class-diagram-uml-20) | Developer | UML class - TypeScript/Python structures |
 | [LLD Error States](#24-lld-error-states-diagram) | Developer, DevOps | Error codes, causes, recovery actions |
 | [LLD State Machine](#25-lld-state-machine-diagram-uml-20) | Developer, Architect | Token, connection, circuit breaker states |
-| [LLD Data Flow](#26-lld-data-flow-diagram) | Developer, Architect | Request/response transformations |
+| [LLD Data Flow (Horizontal)](#26-lld-data-flow-diagram) | Developer, Architect | Request/response transformations |
+| [LLD Data Flow (Vertical)](#26-lld-data-flow-diagram) | Developer, Architect | Layer-by-layer numbered flow |
 | [AWS Infrastructure](#3-aws-infrastructure-topology) | Architect, DevOps | VPC layout, EKS, MSK, network boundaries |
 | [Security Boundaries](#4-security-boundary-diagram) | Architect, Security | Auth flow, JWT validation, trust zones |
 | [Request Flow](#5-end-to-end-request-flow) | Developer, Architect | Message path from chat to Kafka |
@@ -461,18 +462,32 @@ For a single combined view of all phases, see: ![Combined Sequence](images/12-ll
 **Audience:** Developer, Architect  
 **Purpose:** Request/response data transformations through the system
 
-![LLD Data Flow Diagram](images/16-lld-data-flow.svg)
+Two layout options are available:
 
-**Data Transformations:**
+#### Horizontal Layout (Data Processing Focus)
+Best for: Showing data transformations step-by-step
 
-| Stage | Input | Output |
-|-------|-------|--------|
-| **LLM Parsing** | "List all topics on production" | `{tool: "list_topics", arguments: {environment: "prod"}}` |
-| **HTTP Request** | Tool call + JWT | POST /kafka/prod/mcp with Authorization header |
-| **Kong Transform** | JWT claims | X-User-Email, X-User-Teams headers (JWT stripped) |
-| **MCP Processing** | `tools/call` request | Kafka AdminClient.listTopics() |
-| **Response Format** | `Set<TopicListing>` | MCP Response with content array |
-| **LLM Formatting** | MCP Response | "Found 3 topics: orders, payments, notifications" |
+![LLD Data Flow - Horizontal](images/16-lld-data-flow.svg)
+
+#### Vertical Layout (Layer Architecture Focus)
+Best for: Showing system layers and numbered flow
+
+![LLD Data Flow - Vertical](images/16b-lld-data-flow-vertical.svg)
+
+**Data Flow Steps (Numbered in Vertical Diagram):**
+
+| Step | Layer | Action | Data Transformation |
+|------|-------|--------|---------------------|
+| 1 | User | Natural language input | "List all topics on production" |
+| 2 | LLM | Intent parsing | → `{tool: "list_topics", env: "prod"}` |
+| 3 | Auth | Token injection | → Add `Authorization: Bearer JWT` |
+| 4 | HTTP | Request formation | → POST /kafka/prod/mcp |
+| 5 | ALB | TLS termination | HTTPS → HTTP |
+| 6 | Kong | Validate & transform | → `X-User-Email`, `X-User-Teams` (JWT stripped) |
+| 7 | K8s | Load balance | → Route to pod |
+| 8 | MCP | Execute tool | → `AdminClient.list_topics()` |
+| 9 | MSK | Query metadata | → `[orders, payments, notifications]` |
+| 10 | Response | Format output | → "Found 3 topics: orders, payments, notifications" |
 
 **Request/Response Structures:**
 
@@ -2888,9 +2903,9 @@ $ mcp-admin report failures --days 7
 
 **Q3: How do I perform a rollback if the new extension version has bugs?**
 1. **Extension rollback:**
-   - VS Code Marketplace allows previous version install
-   - Distribute `.vsix` of known-good version via Slack
-   - Users: Extensions → MCP Auth → Install Another Version... → select previous
+   - Download previous version from Artifactory: `https://artifactory.company.com/vscode-extensions/mcp-auth-extension-v{VERSION}.vsix`
+   - Install via: `code --install-extension mcp-auth-extension-v1.0.0.vsix`
+   - Or: Extensions → ... → Install from VSIX... → select downloaded file
 2. **Server rollback:**
    ```bash
    # Roll back Kubernetes deployment to previous revision
@@ -3728,8 +3743,9 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
   - [ ] No impact on existing extensions (Copilot, etc.)
 - [ ] **2.8 Distribution**
   - [ ] Package as `.vsix`
-  - [ ] Publish to internal Marketplace (or direct `.vsix` distribution)
-  - [ ] Verify auto-update works
+  - [ ] Upload to Artifactory: `https://artifactory.company.com/vscode-extensions/mcp-auth-extension-{VERSION}.vsix`
+  - [ ] Update `mcp-auth-extension-latest.json` manifest for auto-update
+  - [ ] Verify auto-update notification works
 
 ---
 
@@ -3882,23 +3898,34 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
 
 ### 8. Documentation & Runbooks
 
+> **Reference:** See [MCP_PROJECT_STRUCTURE.md Section 2.4](MCP_PROJECT_STRUCTURE.md#24-documentation-architecture-ai-ready-traceable-maintainable) for complete documentation structure.
+
 - [ ] **8.1 Architecture Documentation**
   - [ ] This document reviewed and approved by team
-  - [ ] Architecture diagrams finalized
-  - [ ] ADRs reviewed and signed off
-- [ ] **8.2 Developer Documentation**
-  - [ ] Extension installation guide
+  - [ ] Architecture diagrams finalized (SVGs in `docs/design/diagrams/`)
+  - [ ] ADRs reviewed and signed off (`docs/adr/`)
+- [ ] **8.2 AI Agent Context (`.copilot/` folder in each repo)**
+  - [ ] `instructions.md` — Project rules, constraints, standards
+  - [ ] `patterns.md` — Code patterns to follow/avoid
+  - [ ] `glossary.md` — Domain terminology definitions
+- [ ] **8.3 Requirements & Stories (`docs/requirements/`)**
+  - [ ] Requirements traceability matrix in `README.md`
+  - [ ] Individual requirements (REQ-NNN format)
+  - [ ] User stories with acceptance criteria (`stories/STORY-NNN.md`)
+- [ ] **8.4 Developer Documentation**
+  - [ ] Extension installation guide (`docs/user-guide/installation.md`)
   - [ ] "Getting started" guide (install + sign in + first query)
-  - [ ] Troubleshooting FAQ
-  - [ ] Available MCP tools reference (all Kafka tools documented)
-- [ ] **8.3 Operations Runbooks**
+  - [ ] Troubleshooting FAQ (`docs/user-guide/troubleshooting.md`)
+  - [ ] Available MCP tools reference (`docs/api/tools-reference.md`)
+- [ ] **8.5 Operations Runbooks (`docs/runbooks/`)**
+  - [ ] Deployment procedure (`deployment.md`)
   - [ ] MCP server pod not starting — troubleshooting steps
   - [ ] PingFederate SSO integration issues
   - [ ] Adding a new Kafka cluster — step-by-step
   - [ ] Adding a new MCP server type — step-by-step
-  - [ ] Incident response for MCP service outage
-- [ ] **8.4 Internal Team Docs**
-  - [ ] VS Code extension build & publish guide
+  - [ ] Incident response for MCP service outage (`incident-response.md`)
+- [ ] **8.6 Internal Team Docs**
+  - [ ] VS Code extension build & publish guide (`CONTRIBUTING.md`)
   - [ ] MCP server development guide (how to add new tools)
   - [ ] Gateway configuration guide
 
@@ -3930,7 +3957,7 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
 
 - [ ] **10.1 Beta Rollout (10 users)**
   - [ ] Select 10 beta users from different teams
-  - [ ] Distribute extension (`.vsix` or Marketplace)
+  - [ ] Distribute `.vsix` from Artifactory: `code --install-extension https://artifactory.company.com/vscode-extensions/mcp-auth-extension-v1.0.0.vsix`
   - [ ] Collect feedback (Slack channel or survey)
   - [ ] Fix critical issues
 - [ ] **10.2 Expanded Rollout (50 users)**
@@ -3939,8 +3966,8 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
   - [ ] Refine documentation based on support questions
 - [ ] **10.3 General Availability (100–1,000 users)**
   - [ ] Announce to engineering organization (all-hands, email, Slack)
-  - [ ] Extension available on internal Marketplace
-  - [ ] Onboarding guide distributed
+  - [ ] Extension `.vsix` available on Artifactory (with auto-update notification)
+  - [ ] Onboarding guide distributed (includes install command)
   - [ ] Support channel established (Slack `#mcp-support`)
   - [ ] Monitor scaling (auto-scaling, PingFederate load)
 - [ ] **10.4 Post-Launch**
@@ -3962,10 +3989,10 @@ Use this checklist to track all work items. Mark items `[x]` as they are complet
 | 5. Amazon MSK | 3 main / 11 sub | 0 | 🔴 Not started |
 | 6. Monitoring | 3 main / 12 sub | 0 | 🔴 Not started |
 | 7. Security | 4 main / 13 sub | 0 | 🔴 Not started |
-| 8. Documentation | 4 main / 13 sub | 0 | 🔴 Not started |
+| 8. Documentation | 6 main / 19 sub | 0 | 🔴 Not started |
 | 9. Testing | 4 main / 14 sub | 0 | 🔴 Not started |
 | 10. Rollout | 4 main / 13 sub | 0 | 🔴 Not started |
-| **TOTAL** | **45 main / 170 sub** | **0** | 🔴 **Not started** |
+| **TOTAL** | **47 main / 176 sub** | **0** | 🔴 **Not started** |
 
 Update this summary table as items are completed. Change status to:
 - 🟡 In progress (some items done)
