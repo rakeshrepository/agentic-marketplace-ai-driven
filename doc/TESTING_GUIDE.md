@@ -88,8 +88,7 @@ NAME                   STATUS
 zookeeper              Up (healthy)
 kafka                  Up (healthy)
 kafka-ui               Up
-agent-registry         Up (healthy)
-postgres               Up (healthy)
+kafka-mcp-server       Up
 ```
 
 Verify Kafka is accessible:

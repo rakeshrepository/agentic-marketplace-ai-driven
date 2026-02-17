@@ -1,0 +1,229 @@
+{
+  "$schema": "https://raw.githubusercontent.com/finos/architecture-as-code/main/calm/draft/2024-04/meta/calm.json",
+  "metadata": {
+    "name": "Kafka MCP Server Architecture",
+    "version": "1.0.0",
+    "description": "AI-powered Kafka management using Model Context Protocol (MCP) - VS Code Copilot as MCP Client",
+    "author": "Architecture Team",
+    "created": "2026-02-17",
+    "tags": ["mcp", "kafka", "ai", "vscode", "copilot", "docker"]
+  },
+  "nodes": [
+    {
+      "unique-id": "user",
+      "node-type": "actor",
+      "name": "Developer/User",
+      "description": "End user who interacts with Kafka resources via VS Code + GitHub Copilot using natural language"
+    },
+    {
+      "unique-id": "vscode-copilot",
+      "node-type": "system",
+      "name": "VS Code + GitHub Copilot",
+      "description": "MCP Client - IDE with AI assistant (Claude Sonnet 4.5) that interprets natural language and orchestrates tool calls",
+      "interfaces": [
+        {
+          "unique-id": "copilot-chat-interface",
+          "type": "path-interface",
+          "path": "/chat"
+        }
+      ]
+    },
+    {
+      "unique-id": "kafka-mcp-server",
+      "node-type": "service",
+      "name": "Kafka MCP Server",
+      "description": "Stateless MCP tool server that exposes Kafka admin operations as tools. Pure executor - no LLM, no state. Implements JSON-RPC 2.0 over STDIO/HTTP",
+      "interfaces": [
+        {
+          "unique-id": "mcp-http-interface",
+          "type": "host-port-interface",
+          "host": "localhost",
+          "port": 8081
+        },
+        {
+          "unique-id": "mcp-stdio-interface",
+          "type": "path-interface",
+          "path": "stdio"
+        },
+        {
+          "unique-id": "mcp-health-interface",
+          "type": "url-interface",
+          "url": "http://localhost:8081/health"
+        }
+      ],
+      "run-as": "java",
+      "details": {
+        "tools": [
+          "cluster_overview",
+          "list_topics",
+          "describe_topic",
+          "create_topic",
+          "delete_topic",
+          "topic_exists",
+          "update_topic"
+        ]
+      }
+    },
+    {
+      "unique-id": "kafka-broker",
+      "node-type": "service",
+      "name": "Kafka Broker",
+      "description": "Apache Kafka message broker for event streaming, topic management, and message persistence",
+      "interfaces": [
+        {
+          "unique-id": "kafka-external-interface",
+          "type": "host-port-interface",
+          "host": "localhost",
+          "port": 9092
+        },
+        {
+          "unique-id": "kafka-internal-interface",
+          "type": "host-port-interface",
+          "host": "kafka",
+          "port": 29092
+        }
+      ]
+    },
+    {
+      "unique-id": "zookeeper",
+      "node-type": "service",
+      "name": "Zookeeper",
+      "description": "Apache Zookeeper for Kafka cluster coordination, leader election, and configuration management",
+      "interfaces": [
+        {
+          "unique-id": "zookeeper-interface",
+          "type": "host-port-interface",
+          "host": "localhost",
+          "port": 2181
+        }
+      ]
+    },
+    {
+      "unique-id": "kafka-ui",
+      "node-type": "webclient",
+      "name": "Kafka UI",
+      "description": "Web-based Kafka management and monitoring interface (Provectus Kafka UI)",
+      "interfaces": [
+        {
+          "unique-id": "kafka-ui-interface",
+          "type": "host-port-interface",
+          "host": "localhost",
+          "port": 8088
+        }
+      ]
+    },
+    {
+      "unique-id": "docker-network",
+      "node-type": "network",
+      "name": "Agentic Network",
+      "description": "Docker bridge network connecting all containerized services"
+    }
+  ],
+  "relationships": [
+    {
+      "unique-id": "user-to-vscode",
+      "description": "Developer uses VS Code with GitHub Copilot to interact with AI assistant using natural language",
+      "relationship-type": {
+        "interacts": {
+          "actor": "user",
+          "nodes": ["vscode-copilot"]
+        }
+      }
+    },
+    {
+      "unique-id": "vscode-to-mcp-server",
+      "description": "VS Code Copilot (MCP Client) calls Kafka MCP Server tools via JSON-RPC 2.0 over STDIO",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "vscode-copilot"
+          },
+          "destination": {
+            "node": "kafka-mcp-server",
+            "interfaces": ["mcp-stdio-interface"]
+          }
+        }
+      },
+      "protocol": "JSON-RPC 2.0"
+    },
+    {
+      "unique-id": "mcp-server-to-kafka",
+      "description": "Kafka MCP Server executes admin operations against Kafka broker using Kafka Admin API",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "kafka-mcp-server"
+          },
+          "destination": {
+            "node": "kafka-broker",
+            "interfaces": ["kafka-internal-interface"]
+          }
+        }
+      },
+      "protocol": "Kafka Admin API"
+    },
+    {
+      "unique-id": "kafka-to-zookeeper",
+      "description": "Kafka broker connects to Zookeeper for cluster coordination",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "kafka-broker"
+          },
+          "destination": {
+            "node": "zookeeper",
+            "interfaces": ["zookeeper-interface"]
+          }
+        }
+      },
+      "protocol": "Zookeeper Protocol"
+    },
+    {
+      "unique-id": "kafka-ui-to-kafka",
+      "description": "Kafka UI monitors and manages Kafka cluster",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "kafka-ui"
+          },
+          "destination": {
+            "node": "kafka-broker",
+            "interfaces": ["kafka-internal-interface"]
+          }
+        }
+      },
+      "protocol": "Kafka Protocol"
+    },
+    {
+      "unique-id": "kafka-ui-to-zookeeper",
+      "description": "Kafka UI connects to Zookeeper for cluster metadata",
+      "relationship-type": {
+        "connects": {
+          "source": {
+            "node": "kafka-ui"
+          },
+          "destination": {
+            "node": "zookeeper",
+            "interfaces": ["zookeeper-interface"]
+          }
+        }
+      },
+      "protocol": "Zookeeper Protocol"
+    },
+    {
+      "unique-id": "services-deployed-in-network",
+      "description": "All containerized services are deployed in the Docker bridge network",
+      "relationship-type": {
+        "deployed-in": {
+          "container": "docker-network",
+          "nodes": [
+            "kafka-mcp-server",
+            "kafka-broker",
+            "zookeeper",
+            "kafka-ui"
+          ]
+        }
+      }
+    }
+  ]
+}

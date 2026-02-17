@@ -1,0 +1,56 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4F46E5', 'primaryTextColor': '#fff', 'primaryBorderColor': '#3730A3', 'lineColor': '#6366F1', 'secondaryColor': '#10B981', 'tertiaryColor': '#F59E0B'}}}%%
+
+flowchart TB
+    subgraph Actors["👤 External Actors"]
+        User["Developer/User"]
+    end
+
+    subgraph Clients["🖥️ MCP Client Layer"]
+        VSCode["VS Code + GitHub Copilot<br/>(MCP Client)<br/>Claude Sonnet 4.5"]
+    end
+
+    subgraph Services["⚙️ Application Services"]
+        MCP["Kafka MCP Server<br/>(Java, Stateless)<br/>Port: 8081<br/>─────────────<br/>Tools:<br/>• cluster_overview<br/>• list_topics<br/>• describe_topic<br/>• create_topic<br/>• delete_topic<br/>• topic_exists<br/>• update_topic"]
+    end
+
+    subgraph Infrastructure["🏗️ Infrastructure Layer"]
+        Kafka["Kafka Broker<br/>Port: 9092"]
+        ZK["Zookeeper<br/>Port: 2181"]
+        KafkaUI["Kafka UI<br/>Port: 8088"]
+    end
+
+    subgraph Network["🌐 Docker Network"]
+        direction LR
+        Net["agentic-network<br/>(bridge)"]
+    end
+
+    %% User interactions
+    User -->|"Natural Language"| VSCode
+
+    %% Client to Service
+    VSCode -->|"JSON-RPC 2.0<br/>STDIO"| MCP
+
+    %% Service to Infrastructure
+    MCP -->|"Kafka Admin API"| Kafka
+    Kafka -->|"Zookeeper Protocol"| ZK
+    KafkaUI -->|"Kafka Protocol"| Kafka
+    KafkaUI -->|"ZK Protocol"| ZK
+
+    %% Deployment
+    MCP -.->|"deployed-in"| Net
+    Kafka -.->|"deployed-in"| Net
+    ZK -.->|"deployed-in"| Net
+    KafkaUI -.->|"deployed-in"| Net
+
+    %% Styling
+    classDef actor fill:#F59E0B,stroke:#D97706,color:#fff
+    classDef client fill:#4F46E5,stroke:#3730A3,color:#fff
+    classDef service fill:#10B981,stroke:#059669,color:#fff
+    classDef infra fill:#6366F1,stroke:#4F46E5,color:#fff
+    classDef network fill:#8B5CF6,stroke:#7C3AED,color:#fff
+
+    class User actor
+    class VSCode client
+    class MCP service
+    class Kafka,ZK,KafkaUI infra
+    class Net network

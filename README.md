@@ -1,13 +1,13 @@
-# Agentic Marketplace AI-Driven
+# Kafka MCP Server
 
-A self-service marketplace with AI-powered Kafka management using the Model Context Protocol (MCP).
+AI-powered Kafka management using the Model Context Protocol (MCP).
 
 ## 🎯 Overview
 
 This project implements a **clean MCP architecture** where:
 - **VS Code + GitHub Copilot** = MCP Client (with Claude Sonnet 4.5)
 - **Kafka MCP Server** = Pure tool executor (NO LLM, stateless)
-- **Infrastructure** = Docker containers (Kafka, Zookeeper, Agent Registry, etc.)
+- **Infrastructure** = Docker containers (Kafka, Zookeeper, Kafka UI)
 
 Users interact with Kafka infrastructure through natural language via Claude in VS Code.
 
@@ -63,13 +63,10 @@ Users interact with Kafka infrastructure through natural language via Claude in 
 
 | Service | Port | Description |
 |---------|------|-------------|
-| **Web UI** | 3000 | React web application (marketplace) |
-| **Agent Registry** | 8090 | Agent metadata API |
 | **Kafka MCP Server** | 8081 | MCP tools for Kafka admin |
 | **Kafka UI** | 8088 | Kafka management web interface |
 | **Kafka Broker** | 9092 | Kafka cluster |
 | **Zookeeper** | 2181 | Kafka coordination |
-| **PostgreSQL** | 5432 | Agent registry database |
 
 ---
 
@@ -163,14 +160,14 @@ The Kafka MCP Server provides 7 tools:
 - **[Memory Implementation Guide](doc/MEMORY_IMPLEMENTATION_GUIDE.md)** - Building memory layer: RAG, session, preferences, audit
 - **[Configuration Reference](doc/CONFIGURATION_REFERENCE.md)** - All configuration options
 - **[Memory Design Proposal](doc/MEMORY_DESIGN_PROPOSAL.md)** - Future memory system design
-- **[Web App MCP Client](web-app/MCP_CLIENT_README.md)** - Web application MCP implementation
+- **[Tool Design FAQ](doc/TOOL_DESIGN_FAQ.md)** - Best practices for MCP tool design
 
 ---
 
 ## 📁 Project Structure
 
 ```
-agentic-marketplace-ai-driven/
+kafka-mcp-server/
 ├── .vscode/
 │   └── mcp.json                      # VS Code MCP configuration
 ├── mcp-server/
@@ -180,8 +177,6 @@ agentic-marketplace-ai-driven/
 │       │   └── KafkaAdminService.java     # Kafka operations
 │       └── target/
 │           └── kafka-mcp-server-*.jar     # Built JAR
-├── agent-registry-service/           # Agent metadata API
-├── web-app/                          # React + Vite frontend
 ├── doc/                              # Documentation
 ├── docker-compose.yml                # All infrastructure services
 ├── run-mcp-stdio.sh                  # MCP server launcher (for VS Code)
@@ -263,7 +258,7 @@ docker-compose logs -f
 
 # View specific service
 docker logs -f kafka
-docker logs -f agent-registry
+docker logs -f kafka-mcp-server
 ```
 
 ### Stop Services

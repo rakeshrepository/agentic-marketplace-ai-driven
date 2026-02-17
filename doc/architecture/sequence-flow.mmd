@@ -1,0 +1,64 @@
+%%{init: {'theme': 'base'}}%%
+
+sequenceDiagram
+    autonumber
+    participant U as 👤 User
+    participant C as 🤖 Claude (VS Code)
+    participant M as ⚙️ MCP Server
+    participant K as 📨 Kafka Broker
+
+    Note over U,K: Topic Creation Flow (Happy Path)
+    
+    U->>C: "Create topic 'orders' with 5 partitions"
+    
+    activate C
+    Note right of C: Think: Analyze request<br/>Identify: create_topic tool
+    
+    C->>M: tools/call("create_topic", {name: "orders", partitions: 5})
+    deactivate C
+    
+    activate M
+    Note right of M: Execute KafkaAdminService.createTopic()
+    
+    M->>K: AdminClient.createTopics()
+    activate K
+    K-->>M: TopicCreated
+    deactivate K
+    
+    M-->>C: {success: true, topic: "orders", partitions: 5}
+    deactivate M
+    
+    activate C
+    Note right of C: Format response<br/>for human
+    C-->>U: "✓ Topic 'orders' created with 5 partitions"
+    deactivate C
+
+    Note over U,K: Topic Creation Flow (With Rollback on Failure)
+    
+    U->>C: "Provision topic 'orders' for team-a"
+    
+    activate C
+    Note right of C: Think: Full provisioning needed<br/>Steps: create_topic → create_sa → assign_acl → email
+    
+    C->>M: tools/call("create_topic", {name: "orders"})
+    M-->>C: {success: true}
+    
+    C->>M: tools/call("create_service_account", {topic: "orders"})
+    M-->>C: {success: true, sa: "orders-sa"}
+    
+    C->>M: tools/call("assign_acl", {sa: "orders-sa", topic: "orders"})
+    M-->>C: {error: "Permission denied"}
+    
+    Note right of C: ⚠️ Failure! Initiate rollback
+    
+    rect rgb(255, 200, 200)
+        Note over C,M: ROLLBACK PHASE
+        C->>M: tools/call("delete_service_account", {sa: "orders-sa"})
+        M-->>C: {success: true}
+        
+        C->>M: tools/call("delete_topic", {name: "orders"})
+        M-->>C: {success: true}
+    end
+    
+    C-->>U: "❌ Failed: ACL assignment denied.<br/>All changes rolled back.<br/>Contact admin for permissions."
+    deactivate C

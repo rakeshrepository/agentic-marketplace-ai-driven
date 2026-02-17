@@ -2897,7 +2897,472 @@ ORDER BY duration_ms DESC;
 
 ---
 
-## 13. Open Questions
+## 13. API Versioning Strategy
+
+### 13.1 MCP Protocol Version
+
+The MCP protocol itself is versioned by Anthropic. Our servers declare compatibility:
+
+```python
+# mcp_common/server.py
+from mcp import Server
+
+server = Server(
+    name="topic-management-mcp",
+    version="2.1.0",  # Our server version
+)
+
+# Protocol version is handled by the mcp SDK automatically
+# Clients negotiate protocol version during initialization
+```
+
+### 13.2 Tool Versioning Philosophy
+
+MCP tools are **not versioned individually**. Instead:
+
+| Approach | Strategy |
+|----------|----------|
+| **Additive Changes** | Add new tools, don't modify existing |
+| **Breaking Changes** | New tool with different name (e.g., `create_topic_v2`) |
+| **Deprecation** | Mark tool as deprecated, add notice in description |
+| **Removal** | Remove after deprecation period (minimum 90 days) |
+
+### 13.3 Tool Schema Evolution Rules
+
+```
+✅ SAFE (Non-Breaking)
+├── Add new optional parameter with default
+├── Add new tool
+├── Add new field to response
+├── Expand enum values (add new options)
+└── Relax validation (e.g., increase max length)
+
+❌ BREAKING (Requires New Tool)
+├── Remove parameter
+├── Change parameter type
+├── Make optional parameter required
+├── Remove field from response
+├── Change response structure
+├── Rename tool
+└── Restrict enum values (remove options)
+```
+
+### 13.4 Deprecation Workflow
+
+```yaml
+# Tool lifecycle stages
+stages:
+  active:      # Normal use
+  deprecated:  # Still works, warns users, minimum 90 days
+  removed:     # Tool no longer available
+
+# Example deprecated tool
+- name: list_topics
+  deprecated: true
+  deprecation_notice: "Use list_topics_v2 instead. Removal: 2026-06-01"
+  replacement: list_topics_v2
+```
+
+### 13.5 Tool Deprecation Implementation
+
+```python
+from functools import wraps
+from datetime import date
+from mcp_common.logging import get_logger
+
+logger = get_logger(__name__)
+
+def deprecated(removal_date: str, replacement: str | None = None):
+    """Mark a tool as deprecated with optional replacement."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            msg = f"Tool '{func.__name__}' is deprecated and will be removed on {removal_date}."
+            if replacement:
+                msg += f" Use '{replacement}' instead."
+            logger.warning(msg)
+            return await func(*args, **kwargs)
+        
+        # Add deprecation notice to tool description
+        original_doc = func.__doc__ or ""
+        func.__doc__ = f"⚠️ DEPRECATED: {msg}\n\n{original_doc}"
+        return wrapper
+    return decorator
+
+# Usage
+@deprecated(removal_date="2026-06-01", replacement="list_topics_v2")
+@server.tool()
+async def list_topics(cluster: str) -> list[dict]:
+    """List all topics in the cluster."""
+    ...
+
+@server.tool()
+async def list_topics_v2(
+    cluster: str,
+    include_internal: bool = False,  # New parameter
+    page_size: int = 100,            # New parameter
+) -> dict:
+    """List all topics with pagination support."""
+    ...
+```
+
+### 13.6 Server Version Strategy
+
+```
+Server Version: MAJOR.MINOR.PATCH (SemVer)
+
+MAJOR bump:
+  - Complete rewrite
+  - Major breaking changes to multiple tools
+  - Infrastructure changes affecting all users
+
+MINOR bump:
+  - New tools added
+  - New optional parameters
+  - Deprecated tools removed (after notice period)
+
+PATCH bump:
+  - Bug fixes
+  - Security patches
+  - Documentation updates
+```
+
+### 13.7 Client Compatibility Matrix
+
+| Client Version | Server 1.x | Server 2.x | Server 3.x |
+|----------------|------------|------------|------------|
+| Extension 1.x  | ✅ Full    | ⚠️ Partial | ❌ None    |
+| Extension 2.x  | ✅ Full    | ✅ Full    | ⚠️ Partial |
+| Extension 3.x  | ⚠️ Partial | ✅ Full    | ✅ Full    |
+
+**Compatibility Rules:**
+- Servers support clients up to 2 major versions behind
+- Clients should warn users when server version is newer than expected
+
+### 13.8 Version Discovery Endpoint
+
+```python
+# Health/info endpoint returns version information
+@server.tool()
+async def get_server_info() -> dict:
+    """Get server version and capability information."""
+    return {
+        "server": {
+            "name": "topic-management-mcp",
+            "version": "2.1.0",
+            "mcp_protocol_version": "1.0.0",
+        },
+        "capabilities": {
+            "tools": ["list_topics_v2", "create_topic", "delete_topic"],
+            "deprecated_tools": ["list_topics"],
+        },
+        "deprecations": [
+            {
+                "tool": "list_topics",
+                "removal_date": "2026-06-01",
+                "replacement": "list_topics_v2",
+            }
+        ],
+    }
+```
+
+---
+
+## 14. Capacity Planning
+
+### 14.1 Traffic Patterns
+
+```
+MCP Tool Call Characteristics:
+├── Read-heavy: 80% read (list, describe) / 20% write (create, delete)
+├── Bursty: Spikes during business hours (9am-6pm)
+├── Session-bound: Users work in focused sessions (30-60 min bursts)
+└── AI-driven: Single user generates 10-50 tool calls per session
+```
+
+### 14.2 Baseline Resource Requirements
+
+| Component | CPU | Memory | Storage | Notes |
+|-----------|-----|--------|---------|-------|
+| MCP Server (per instance) | 0.5 vCPU | 512MB | - | Stateless, scales horizontally |
+| Kong Gateway | 2 vCPU | 2GB | - | Per node, 2+ for HA |
+| TimescaleDB | 4 vCPU | 8GB | 100GB SSD | Audit trail, grows with retention |
+| Redis (Kong) | 1 vCPU | 2GB | - | Rate limiting state |
+
+### 14.3 Scaling Triggers
+
+```yaml
+# Kubernetes HPA configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: topic-management-mcp-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: topic-management-mcp
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Scale on CPU
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    
+    # Scale on memory
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    
+    # Scale on request rate (custom metric from Prometheus)
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 5 min cooldown
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0    # Immediate scale up
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+```
+
+### 14.4 Rate Limiting Configuration
+
+```yaml
+# Kong rate limiting (per user)
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 60           # 60 requests/minute per user
+      hour: 1000           # 1000 requests/hour per user
+      policy: redis        # Distributed rate limiting
+      fault_tolerant: true # Continue if Redis unavailable
+      hide_client_headers: false
+      
+      # Different limits by route/tool
+      # High-frequency tools (read)
+      paths:
+        /mcp/topic-management/list_topics:
+          minute: 120
+        /mcp/topic-management/describe_topic:
+          minute: 120
+        
+        # Low-frequency tools (write) - stricter limits
+        /mcp/topic-management/create_topic:
+          minute: 10
+        /mcp/topic-management/delete_topic:
+          minute: 5
+```
+
+### 14.5 Capacity Sizing by User Scale
+
+| Users | MCP Server Instances | Kong Nodes | TimescaleDB | Redis |
+|-------|----------------------|------------|-------------|-------|
+| 10 (POC) | 2 | 1 | 2 vCPU / 4GB | 0.5 vCPU / 1GB |
+| 50 (Pilot) | 3 | 2 | 4 vCPU / 8GB | 1 vCPU / 2GB |
+| 200 (Team) | 5 | 2 | 4 vCPU / 16GB | 2 vCPU / 4GB |
+| 500 (Org) | 10 | 3 | 8 vCPU / 32GB | 2 vCPU / 4GB |
+| 1000+ (Enterprise) | 20+ | 4+ | 16 vCPU / 64GB | 4 vCPU / 8GB |
+
+### 14.6 Database Capacity Planning (TimescaleDB)
+
+```sql
+-- Estimated storage calculation
+-- Assumptions:
+--   - 50 tool calls per user per day
+--   - Average record size: 2KB (includes request/response JSON)
+--   - 90-day retention
+
+-- Daily growth
+SELECT 
+    users * 50 * 2 / 1024 AS daily_mb,
+    users * 50 * 2 / 1024 * 30 AS monthly_mb,
+    users * 50 * 2 / 1024 * 90 AS retention_period_mb
+FROM (VALUES (50), (200), (500), (1000)) AS t(users);
+
+-- Results:
+-- Users | Daily MB | Monthly MB | 90-Day MB
+-- 50    | 4.9      | 146        | 439
+-- 200   | 19.5     | 586        | 1,758
+-- 500   | 48.8     | 1,465      | 4,395
+-- 1000  | 97.7     | 2,930      | 8,789
+
+-- Recommendation: Start with 100GB, alert at 70% usage
+```
+
+### 14.7 Network Bandwidth Estimation
+
+```
+Per Tool Call:
+├── Request:  ~1-5 KB (tool name, parameters)
+├── Response: ~5-50 KB (depends on tool, list operations larger)
+└── Average:  ~20 KB round-trip
+
+Daily Bandwidth (per user):
+├── 50 calls × 20 KB = 1 MB/day
+└── 200 users × 1 MB = 200 MB/day
+
+Peak Hour (assume 40% of daily traffic in 2 hours):
+├── 200 MB × 0.4 / 2 hours = 40 MB/hour = 11 KB/s
+└── Network impact: Negligible
+```
+
+### 14.8 Response Time SLOs
+
+| Percentile | Target | Tool Type | Notes |
+|------------|--------|-----------|-------|
+| p50 | < 200ms | Read | List, describe operations |
+| p50 | < 500ms | Write | Create, update operations |
+| p95 | < 1s | Read | Acceptable for large lists |
+| p95 | < 2s | Write | Includes backend latency |
+| p99 | < 5s | All | Maximum acceptable |
+
+### 14.9 Prometheus Metrics for Capacity Monitoring
+
+```python
+# mcp_common/metrics.py
+from prometheus_client import Counter, Histogram, Gauge
+
+# Request metrics
+TOOL_REQUESTS = Counter(
+    'mcp_tool_requests_total',
+    'Total tool requests',
+    ['server', 'tool', 'status']
+)
+
+TOOL_LATENCY = Histogram(
+    'mcp_tool_latency_seconds',
+    'Tool execution latency',
+    ['server', 'tool'],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
+
+# Capacity metrics
+ACTIVE_CONNECTIONS = Gauge(
+    'mcp_active_connections',
+    'Current active SSE connections',
+    ['server']
+)
+
+RATE_LIMIT_HITS = Counter(
+    'mcp_rate_limit_hits_total',
+    'Rate limit rejections',
+    ['server', 'user_email']
+)
+```
+
+### 14.10 Alerting Thresholds
+
+```yaml
+# Prometheus alerting rules
+groups:
+  - name: mcp-capacity-alerts
+    rules:
+      # High error rate
+      - alert: MCPHighErrorRate
+        expr: |
+          sum(rate(mcp_tool_requests_total{status="error"}[5m])) 
+          / sum(rate(mcp_tool_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP error rate > 5%"
+      
+      # High latency
+      - alert: MCPHighLatency
+        expr: |
+          histogram_quantile(0.95, rate(mcp_tool_latency_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP p95 latency > 2s"
+      
+      # Approaching rate limits
+      - alert: MCPRateLimitApproaching
+        expr: |
+          sum(rate(mcp_rate_limit_hits_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Users hitting rate limits frequently"
+      
+      # Database storage
+      - alert: TimescaleDBStorageHigh
+        expr: |
+          pg_database_size_bytes{datname="audit"} / (100 * 1024 * 1024 * 1024) > 0.7
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "TimescaleDB storage > 70%"
+      
+      # Pod scaling
+      - alert: MCPScaledToMax
+        expr: |
+          kube_hpa_status_current_replicas == kube_hpa_spec_max_replicas
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP server scaled to max replicas"
+```
+
+### 14.11 Capacity Planning Checklist
+
+```markdown
+## Pre-Launch Checklist
+
+### Infrastructure
+- [ ] MCP server instances sized per user count table
+- [ ] Kong gateway HA (minimum 2 nodes)
+- [ ] TimescaleDB provisioned with 90-day retention headroom
+- [ ] Redis cluster for rate limiting
+- [ ] HPA configured with appropriate min/max replicas
+
+### Monitoring
+- [ ] Prometheus scraping all MCP servers
+- [ ] Grafana dashboards for tool latency, error rates
+- [ ] Alerting rules configured and tested
+- [ ] PagerDuty/Slack integration for alerts
+
+### Rate Limiting
+- [ ] Per-user limits configured in Kong
+- [ ] Higher limits for read operations
+- [ ] Stricter limits for write operations
+- [ ] Rate limit headers exposed to clients
+
+### Load Testing
+- [ ] Baseline load test with expected user count
+- [ ] Spike test: 3x normal load for 10 minutes
+- [ ] Soak test: Normal load for 24 hours
+- [ ] Document max throughput before degradation
+```
+
+---
+
+## 15. Open Questions
 
 - [x] ~~Event sourcing for audit trail of tool calls?~~ → **TimescaleDB with retention policy**
 - [x] ~~gRPC between MCP servers?~~ → **Not needed** (AI agent orchestrates; servers stay independent)
@@ -2906,7 +3371,7 @@ ORDER BY duration_ms DESC;
 
 ---
 
-## 14. Next Steps
+## 16. Next Steps
 
 1. **Review this proposal** - Gather feedback from team
 2. **Setup private PyPI** - Configure Nexus/Artifactory for Python packages
