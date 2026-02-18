@@ -15,7 +15,8 @@ dependency-reduced-pom.xml
 # IDE
 .idea/
 *.iml
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 *.swp
 *.swo
 

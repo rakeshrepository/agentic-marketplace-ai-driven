@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "kafkaAdmin": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/run-mcp-stdio.sh"
+      ],
+      "env": {
+        "KAFKA_BOOTSTRAP_SERVERS": "${input:kafkaBootstrapServers}",
+        "KAFKA_ADMIN_TIMEOUT": "10000"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "kafkaBootstrapServers",
+      "type": "promptString",
+      "description": "Kafka Bootstrap Servers (e.g., localhost:9092)",
+      "default": "localhost:9092"
+    }
+  ]
+}
